@@ -13,10 +13,6 @@ class UnsafeFilenameError(WiFiDropError):
     error_code = "unsafe_filename"
 
 
-class EmptyFileError(WiFiDropError):
-    error_code = "empty_file"
-
-
 class FileTooLargeError(WiFiDropError):
     status_code = 413
     error_code = "file_too_large"
@@ -25,4 +21,3 @@ class FileTooLargeError(WiFiDropError):
 class FileStorageError(WiFiDropError):
     status_code = 500
     error_code = "storage_error"
-

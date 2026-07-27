@@ -5,7 +5,7 @@ class StoredFileResponse(BaseModel):
     original_name: str
     saved_name: str
     category: str
-    size: int = Field(ge=1)
+    size: int = Field(ge=0)
     relative_path: str
 
 
@@ -19,4 +19,3 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: str
     message: str
-

@@ -14,7 +14,7 @@ dependencies = [
     "pydantic>=2.11,<2.13",
     "pydantic-settings>=2.10,<2.14",
     "python-multipart>=0.0.20,<1",
-    "uvicorn[standard]>=0.35,<1",
+    "uvicorn>=0.35,<1",
 ]
 
 [project.optional-dependencies]

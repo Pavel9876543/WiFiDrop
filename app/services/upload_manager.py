@@ -9,7 +9,7 @@ from uuid import uuid4
 import aiofiles
 from fastapi import UploadFile
 
-from app.core.exceptions import EmptyFileError, FileStorageError, FileTooLargeError
+from app.core.exceptions import FileStorageError, FileTooLargeError
 from app.core.security import ensure_within_directory, sanitize_filename
 from app.domain.files import StoredFile
 from app.services.file_classifier import FileClassifier
@@ -63,15 +63,12 @@ class UploadManager:
                     await destination.write(chunk)
                 await destination.flush()
 
-            if total_size == 0:
-                raise EmptyFileError("Пустые файлы не загружаются.")
-
             final_path = await self._finalize(temporary_path, destination_dir, safe_name)
-        except (FileTooLargeError, EmptyFileError):
+        except FileTooLargeError:
             await self._remove_partial_file(temporary_path)
             logger.warning("Upload rejected from %s: %s", client_ip, original_name)
             raise
-        except (OSError, RuntimeError) as error:
+        except Exception as error:
             await self._remove_partial_file(temporary_path)
             logger.exception("Failed to store upload from %s: %s", client_ip, original_name)
             raise FileStorageError(
@@ -126,4 +123,3 @@ class UploadManager:
             await asyncio.to_thread(path.unlink, missing_ok=True)
         except OSError:
             logger.warning("Could not remove partial upload: %s", path, exc_info=True)
-

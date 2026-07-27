@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from app.config.settings import Settings
+if TYPE_CHECKING:
+    from app.config.settings import Settings
 
 
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
@@ -49,4 +53,3 @@ def configure_logging(settings: Settings) -> logging.Logger:
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
     return logging.getLogger("wifidrop")
-
