@@ -1,0 +1,14 @@
+@media (min-width: 1024px) {
+    .transfer-card {
+        margin: 0 16px;
+    }
+
+    .drop-zone:hover .drop-zone__icon {
+        transform: translateY(-3px);
+    }
+
+    .drop-zone__icon {
+        transition: transform var(--transition);
+    }
+}
+

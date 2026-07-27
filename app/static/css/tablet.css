@@ -1,0 +1,18 @@
+@media (min-width: 600px) and (max-width: 1023px) {
+    .site-header {
+        width: min(100% - 40px, 900px);
+    }
+
+    .hero {
+        padding-top: 48px;
+    }
+
+    .trust-row {
+        gap: 12px;
+    }
+
+    .trust-item {
+        align-items: flex-start;
+    }
+}
+

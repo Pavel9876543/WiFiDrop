@@ -1,0 +1,140 @@
+@media (max-width: 599px) {
+    .site-header {
+        width: calc(100% - 28px);
+        padding: 15px 0;
+    }
+
+    .brand {
+        font-size: 17px;
+    }
+
+    .brand__mark {
+        width: 35px;
+        height: 35px;
+        border-radius: 11px;
+    }
+
+    .connection {
+        padding: 9px;
+    }
+
+    .connection__text {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+    }
+
+    .page-shell {
+        width: calc(100% - 22px);
+    }
+
+    .hero {
+        padding: 42px 10px 29px;
+    }
+
+    .eyebrow {
+        margin-bottom: 14px;
+        font-size: 10px;
+    }
+
+    .hero h1 {
+        font-size: clamp(35px, 11vw, 48px);
+        line-height: 1.06;
+    }
+
+    .hero p {
+        margin-top: 16px;
+        font-size: 14px;
+        line-height: 1.55;
+    }
+
+    .transfer-card {
+        padding: 7px;
+        border-radius: 22px;
+    }
+
+    .drop-zone {
+        min-height: 330px;
+        padding: 35px 17px 25px;
+        border-radius: 17px;
+    }
+
+    .drop-zone__icon {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 19px;
+        border-radius: 20px;
+    }
+
+    .drop-zone h2,
+    .queue h2 {
+        font-size: 17px;
+    }
+
+    .drop-zone__copy p {
+        max-width: 230px;
+        margin: 7px auto 20px;
+        font-size: 12px;
+    }
+
+    .drop-zone__meta {
+        gap: 7px;
+        font-size: 9px;
+    }
+
+    .queue {
+        padding: 16px 10px 10px;
+    }
+
+    .file-list {
+        max-height: 360px;
+    }
+
+    .file-item {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 9px;
+        padding: 10px 8px;
+    }
+
+    .file-item__icon {
+        width: 37px;
+        height: 37px;
+    }
+
+    .file-item__details {
+        gap: 5px;
+    }
+
+    .queue__footer {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .button--primary {
+        width: 100%;
+    }
+
+    .trust-row {
+        grid-template-columns: 1fr;
+        gap: 15px;
+        padding: 28px 8px 45px;
+    }
+
+    .trust-item small {
+        font-size: 11px;
+    }
+
+    .site-footer {
+        padding-bottom: calc(22px + env(safe-area-inset-bottom));
+    }
+
+    .toast-region {
+        right: 12px;
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        width: calc(100% - 24px);
+    }
+}
+

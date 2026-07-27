@@ -3,10 +3,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.error_handlers import register_exception_handlers
 from app.api.router import router
-from app.config.settings import get_settings
+from app.config.settings import PROJECT_ROOT, get_settings
 from app.core.logging import configure_logging
 
 
@@ -23,6 +24,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.host,
         settings.port,
         settings.upload_dir,
+    )
+    application.mount(
+        "/static",
+        StaticFiles(directory=PROJECT_ROOT / "app" / "static"),
+        name="static",
     )
     try:
         yield

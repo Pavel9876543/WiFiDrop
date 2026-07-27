@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f6f8fc">
+    <meta name="description" content="WiFiDrop — безопасная передача файлов в локальной сети">
+    <title>{{ app_name }} — передача файлов по Wi-Fi</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/animations.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/desktop.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/tablet.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/mobile.css') }}">
+</head>
+<body data-max-file-size-mb="{{ max_file_size_mb }}">
+    <div class="ambient ambient--one" aria-hidden="true"></div>
+    <div class="ambient ambient--two" aria-hidden="true"></div>
+
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="WiFiDrop — главная">
+            <span class="brand__mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img">
+                    <path d="M7 9.5a7 7 0 0 1 10 0M4 6.5a11 11 0 0 1 16 0M10 12.5a3 3 0 0 1 4 0"/>
+                    <circle cx="12" cy="16.5" r="1.25"/>
+                </svg>
+            </span>
+            <span>{{ app_name }}</span>
+        </a>
+
+        <div class="header-actions">
+            <div class="connection" id="connection-status" role="status">
+                <span class="connection__dot"></span>
+                <span class="connection__text">Подключение</span>
+            </div>
+            <button class="icon-button" id="theme-toggle" type="button" aria-label="Переключить тему">
+                <svg class="icon-button__sun" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>
+                </svg>
+                <svg class="icon-button__moon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.5 8.5 0 1 0 20.4 15.2Z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="page-shell">
+        <section class="hero" aria-labelledby="hero-title">
+            <div class="eyebrow"><span></span> Передача без интернета</div>
+            <h1 id="hero-title">Файлы уже почти<br><span>на этом компьютере</span></h1>
+            <p>Выберите всё нужное — WiFiDrop сам разложит файлы по категориям и датам.</p>
+        </section>
+
+        <section class="transfer-card" aria-label="Загрузка файлов">
+            <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-controls="file-input">
+                <input id="file-input" type="file" multiple hidden>
+                <div class="drop-zone__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>
+                    </svg>
+                </div>
+                <div class="drop-zone__copy">
+                    <h2>Перетащите файлы сюда</h2>
+                    <p>или нажмите, чтобы выбрать с устройства</p>
+                </div>
+                <button class="button button--secondary" id="browse-button" type="button">Выбрать файлы</button>
+                <div class="drop-zone__meta">
+                    <span>Любые форматы</span><i></i><span>До {{ max_file_size_mb }} МБ на файл</span>
+                </div>
+            </div>
+
+            <div class="queue" id="queue" hidden>
+                <div class="queue__header">
+                    <div>
+                        <h2>Готово к отправке</h2>
+                        <p id="queue-summary">0 файлов</p>
+                    </div>
+                    <button class="text-button" id="clear-button" type="button">Очистить</button>
+                </div>
+                <div class="file-list" id="file-list" aria-live="polite"></div>
+                <div class="queue__footer">
+                    <div class="total-progress" id="total-progress" hidden>
+                        <div class="total-progress__label">
+                            <span>Общий прогресс</span><strong id="total-percent">0%</strong>
+                        </div>
+                        <div class="progress-track"><span id="total-progress-bar"></span></div>
+                    </div>
+                    <button class="button button--primary" id="upload-button" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 3 3 5-6"/></svg>
+                        <span>Загрузить</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="trust-row" aria-label="Преимущества">
+            <div class="trust-item">
+                <span class="trust-item__icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+                </span>
+                <div><strong>Только локально</strong><small>Данные не покидают Wi-Fi сеть</small></div>
+            </div>
+            <div class="trust-item">
+                <span class="trust-item__icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+                <div><strong>Любые файлы</strong><small>Фото, видео, документы, архивы</small></div>
+            </div>
+            <div class="trust-item">
+                <span class="trust-item__icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h6l2 2h8v10H4V7Z"/><path d="m9 14 2 2 4-4"/></svg>
+                </span>
+                <div><strong>Всё по местам</strong><small>Категории и папки создаются сами</small></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <span>WiFiDrop</span><span class="site-footer__separator">•</span><span>Локальная передача файлов</span>
+    </footer>
+    <div class="toast-region" id="toast-region" aria-live="assertive"></div>
+
+    <script type="module" src="{{ url_for('static', path='/js/app.js') }}"></script>
+</body>
+</html>
+

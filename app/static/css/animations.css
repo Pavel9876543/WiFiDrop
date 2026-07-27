@@ -1,0 +1,54 @@
+@keyframes fade-up {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pop-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse {
+    50% { box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0); }
+}
+
+.hero > * {
+    animation: fade-up 520ms both;
+}
+
+.hero h1 {
+    animation-delay: 70ms;
+}
+
+.hero p {
+    animation-delay: 140ms;
+}
+
+.transfer-card {
+    animation: fade-up 600ms 190ms both;
+}
+
+.trust-row {
+    animation: fade-up 600ms 260ms both;
+}
+
+.connection--online .connection__dot {
+    animation: pulse 2s infinite;
+}
+
+.file-item,
+.toast {
+    animation: pop-in 220ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
