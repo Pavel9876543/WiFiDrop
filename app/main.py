@@ -9,6 +9,7 @@ from app.api.error_handlers import register_exception_handlers
 from app.api.router import router
 from app.config.settings import PROJECT_ROOT, get_settings
 from app.core.logging import configure_logging
+from app.services.upload_cleanup import remove_orphaned_uploads
 
 
 settings = get_settings()
@@ -18,6 +19,7 @@ settings = get_settings()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger = configure_logging(settings)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    remove_orphaned_uploads(settings.upload_dir)
     logger.info(
         "%s started on %s:%s; upload directory: %s",
         settings.app_name,
