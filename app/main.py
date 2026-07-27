@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.error_handlers import register_exception_handlers
 from app.api.router import router
 from app.config.settings import get_settings
 from app.core.logging import configure_logging
@@ -38,9 +39,9 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    register_exception_handlers(application)
     application.include_router(router)
     return application
 
 
 app = create_app()
-
