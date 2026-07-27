@@ -1,0 +1,2 @@
+"""WiFiDrop application package."""
+

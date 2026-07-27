@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wifidrop"
+version = "1.0.0"
+description = "Local Wi-Fi file transfer server"
+requires-python = ">=3.12"
+dependencies = [
+    "aiofiles>=25.1,<26",
+    "fastapi>=0.116,<0.141",
+    "jinja2>=3.1,<4",
+    "pydantic>=2.11,<2.13",
+    "pydantic-settings>=2.10,<2.14",
+    "python-multipart>=0.0.20,<1",
+    "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=8.4,<10",
+    "pytest-asyncio>=1.1,<2",
+    "ruff>=0.12,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
