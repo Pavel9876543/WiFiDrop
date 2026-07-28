@@ -1,10 +1,14 @@
+import asyncio
 from datetime import date
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies import get_upload_manager
 from app.config.settings import Settings
+from app.domain.files import FileCategory, StoredFile
 from app.main import create_app
 from app.services.file_classifier import FileClassifier
 from app.services.upload_manager import UploadManager
@@ -86,3 +90,62 @@ def test_oversized_upload_returns_413(tmp_path: Path) -> None:
 
     assert response.status_code == 413
     assert response.json()["error"] == "file_too_large"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_upload_is_rejected_while_other_routes_stay_available() -> None:
+    class BlockingUploadManager:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.calls = 0
+
+        async def store(self, upload: object, client_ip: str) -> StoredFile:
+            del upload, client_ip
+            self.calls += 1
+            self.started.set()
+            await self.release.wait()
+            return StoredFile(
+                original_name="first.txt",
+                saved_name="first.txt",
+                category=FileCategory.DOCUMENTS,
+                size=5,
+                relative_path=Path("Documents/2026-07-27/first.txt"),
+            )
+
+    application = create_app()
+    manager = BlockingUploadManager()
+    application.dependency_overrides[get_upload_manager] = lambda: manager
+    transport = ASGITransport(app=application)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        first_upload = asyncio.create_task(
+            client.post(
+                "/api/uploads",
+                files={"file": ("first.txt", b"first", "text/plain")},
+            )
+        )
+        await asyncio.wait_for(manager.started.wait(), timeout=1)
+        try:
+            busy_response = await client.post(
+                "/api/uploads",
+                files={"file": ("second.txt", b"second", "text/plain")},
+            )
+            health_response = await client.get("/api/health")
+        finally:
+            manager.release.set()
+        first_response = await first_upload
+
+    assert first_response.status_code == 201
+    assert busy_response.status_code == 503
+    assert busy_response.headers["retry-after"].isdigit()
+    assert busy_response.json() == {
+        "success": False,
+        "error": "server_busy",
+        "message": (
+            "Сервер занят другой загрузкой. Подождите немного "
+            "и повторите отправку позже."
+        ),
+    }
+    assert health_response.status_code == 200
+    assert manager.calls == 1
