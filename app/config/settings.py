@@ -4,7 +4,6 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -22,7 +21,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
     upload_dir: Path = Path("Files")
-    max_file_size_mb: int = Field(default=2048, ge=1)
+    max_file_size_mb: int = Field(default=2048, ge=0)
     log_level: str = "INFO"
     log_dir: Path = Path("logs")
     log_retention_days: int = Field(default=30, ge=1)
@@ -38,13 +37,22 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return normalized
 
+    @field_validator("max_file_size_mb", mode="before")
+    @classmethod
+    def parse_max_file_size(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip().lower() in {"unlimited", "none"}:
+            return 0
+        return value
+
     @field_validator("upload_dir", "log_dir")
     @classmethod
     def resolve_project_path(cls, value: Path) -> Path:
         return value if value.is_absolute() else (PROJECT_ROOT / value).resolve()
 
     @property
-    def max_file_size_bytes(self) -> int:
+    def max_file_size_bytes(self) -> int | None:
+        if self.max_file_size_mb == 0:
+            return None
         return self.max_file_size_mb * 1024 * 1024
 
     @property
@@ -55,4 +63,3 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-

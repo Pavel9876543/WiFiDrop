@@ -2,6 +2,7 @@ import { checkConnection } from "./connection.js";
 import { initializeDropZone } from "./drop-zone.js";
 import { FileListView } from "./file-list.js";
 import { Notifications } from "./notifications.js";
+import { initializePwa } from "./pwa.js";
 import { UploadQueue } from "./queue-state.js";
 import { initializeTheme } from "./theme.js";
 import { uploadFile } from "./uploader.js";
@@ -14,6 +15,7 @@ const elements = {
     dropZone: document.querySelector("#drop-zone"),
     fileInput: document.querySelector("#file-input"),
     fileList: document.querySelector("#file-list"),
+    installButton: document.querySelector("#install-app-button"),
     queue: document.querySelector("#queue"),
     queueSummary: document.querySelector("#queue-summary"),
     themeToggle: document.querySelector("#theme-toggle"),
@@ -25,11 +27,14 @@ const elements = {
 };
 
 const maxFileSizeMb = Number(document.body.dataset.maxFileSizeMb);
+const hasFileSizeLimit = Number.isFinite(maxFileSizeMb) && maxFileSizeMb > 0;
+const maxFileSizeBytes = hasFileSizeLimit ? maxFileSizeMb * 1024 * 1024 : null;
 const notifications = new Notifications(elements.toastRegion);
-const queue = new UploadQueue(maxFileSizeMb * 1024 * 1024, render);
+const queue = new UploadQueue(maxFileSizeBytes, render);
 const fileList = new FileListView(elements.fileList, (id) => queue.remove(id));
 
 initializeTheme(elements.themeToggle);
+initializePwa(elements.installButton, (message) => notifications.show(message, "success"));
 initializeDropZone(
     elements.dropZone,
     elements.fileInput,
@@ -124,4 +129,3 @@ async function startUpload() {
         notifications.show("Не удалось загрузить файлы. Проверьте соединение.", "error");
     }
 }
-

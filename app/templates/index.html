@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#f6f8fc">
     <meta name="description" content="WiFiDrop — безопасная передача файлов в локальной сети">
+    <meta name="application-name" content="WiFiDrop">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="WiFiDrop">
     <title>{{ app_name }} — передача файлов по Wi-Fi</title>
+    <link rel="manifest" href="{{ url_for('static', path='/manifest.webmanifest') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', path='/icons/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='/icons/icon-180.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/components.css') }}">
@@ -14,7 +21,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/css/tablet.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/mobile.css') }}">
 </head>
-<body data-max-file-size-mb="{{ max_file_size_mb }}">
+<body data-max-file-size-mb="{% if max_file_size_mb > 0 %}{{ max_file_size_mb }}{% else %}unlimited{% endif %}">
     <div class="ambient ambient--one" aria-hidden="true"></div>
     <div class="ambient ambient--two" aria-hidden="true"></div>
 
@@ -30,6 +37,12 @@
         </a>
 
         <div class="header-actions">
+            <button class="install-button" id="install-app-button" type="button" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 18v2h14v-2"/>
+                </svg>
+                <span>Установить</span>
+            </button>
             <div class="connection" id="connection-status" role="status">
                 <span class="connection__dot"></span>
                 <span class="connection__text">Подключение</span>
@@ -66,7 +79,14 @@
                 </div>
                 <button class="button button--secondary" id="browse-button" type="button">Выбрать файлы</button>
                 <div class="drop-zone__meta">
-                    <span>Любые форматы</span><i></i><span>До {{ max_file_size_mb }} МБ на файл</span>
+                    <span>Любые форматы</span><i></i>
+                    <span>
+                        {% if max_file_size_mb > 0 %}
+                            До {{ max_file_size_mb }} МБ на файл
+                        {% else %}
+                            Без ограничения размера
+                        {% endif %}
+                    </span>
                 </div>
             </div>
 
@@ -124,4 +144,3 @@
     <script type="module" src="{{ url_for('static', path='/js/app.js') }}"></script>
 </body>
 </html>
-

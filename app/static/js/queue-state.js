@@ -9,7 +9,7 @@ export class UploadQueue {
     add(files) {
         const rejected = [];
         for (const file of files) {
-            if (file.size > this.maxFileSizeBytes) {
+            if (this.maxFileSizeBytes !== null && file.size > this.maxFileSizeBytes) {
                 rejected.push(file);
                 continue;
             }
@@ -61,4 +61,3 @@ export class UploadQueue {
         this.onChange(this.items);
     }
 }
-

@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config.settings import PROJECT_ROOT, get_settings
-
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=PROJECT_ROOT / "app" / "templates")
@@ -21,3 +20,14 @@ async def home(request: Request) -> HTMLResponse:
         },
     )
 
+
+@router.get("/service-worker.js", response_class=FileResponse)
+async def service_worker() -> FileResponse:
+    return FileResponse(
+        PROJECT_ROOT / "app" / "static" / "js" / "service-worker.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
+    )

@@ -14,7 +14,6 @@ from app.core.security import ensure_within_directory, sanitize_filename
 from app.domain.files import StoredFile
 from app.services.file_classifier import FileClassifier
 
-
 logger = logging.getLogger("wifidrop.uploads")
 
 
@@ -22,7 +21,7 @@ class UploadManager:
     def __init__(
         self,
         upload_root: Path,
-        max_file_size_bytes: int,
+        max_file_size_bytes: int | None,
         chunk_size_bytes: int,
         classifier: FileClassifier,
         date_provider: Callable[[], date] = date.today,
@@ -55,7 +54,10 @@ class UploadManager:
             async with aiofiles.open(temporary_path, "xb") as destination:
                 while chunk := await upload.read(self._chunk_size_bytes):
                     total_size += len(chunk)
-                    if total_size > self._max_file_size_bytes:
+                    if (
+                        self._max_file_size_bytes is not None
+                        and total_size > self._max_file_size_bytes
+                    ):
                         raise FileTooLargeError(
                             "Файл превышает разрешённый размер "
                             f"({self._max_file_size_bytes // (1024 * 1024)} МБ)."

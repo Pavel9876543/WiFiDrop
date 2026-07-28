@@ -1,0 +1,38 @@
+services:
+  wifidrop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wifidrop:local
+    init: true
+    user: "${WIFIDROP_UID:-1000}:${WIFIDROP_GID:-1000}"
+    env_file:
+      - .env
+    environment:
+      # Host paths from .env cannot be used inside a Linux container.
+      HOST: 0.0.0.0
+      PORT: "${PORT:-8000}"
+      UPLOAD_DIR: /data/uploads
+      LOG_DIR: /data/logs
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - type: bind
+        source: "${UPLOAD_DIR:-./Files}"
+        target: /data/uploads
+      - type: bind
+        source: ./logs
+        target: /data/logs
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true

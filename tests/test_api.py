@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_upload_manager
+from app.config.settings import Settings
 from app.main import create_app
 from app.services.file_classifier import FileClassifier
 from app.services.upload_manager import UploadManager
@@ -26,10 +27,16 @@ def test_home_page_and_health(tmp_path: Path) -> None:
     with create_test_client(tmp_path) as client:
         page = client.get("/")
         health = client.get("/api/health")
+        service_worker = client.get("/service-worker.js")
 
     assert page.status_code == 200
     assert "WiFiDrop" in page.text
+    assert 'rel="manifest"' in page.text
+    assert 'id="install-app-button"' in page.text
     assert health.json() == {"status": "ok"}
+    assert service_worker.status_code == 200
+    assert service_worker.headers["service-worker-allowed"] == "/"
+    assert "wifidrop-shell" in service_worker.text
 
 
 def test_upload_endpoint(tmp_path: Path) -> None:
@@ -44,6 +51,17 @@ def test_upload_endpoint(tmp_path: Path) -> None:
     assert payload["success"] is True
     assert payload["file"]["category"] == "Documents"
     assert payload["file"]["relative_path"] == "Documents/2026-07-27/notes.txt"
+
+
+def test_home_page_shows_unlimited_file_size(tmp_path: Path, monkeypatch) -> None:
+    unlimited_settings = Settings(_env_file=None, max_file_size_mb=0)
+    monkeypatch.setattr("app.api.routes.pages.get_settings", lambda: unlimited_settings)
+
+    with create_test_client(tmp_path) as client:
+        page = client.get("/")
+
+    assert 'data-max-file-size-mb="unlimited"' in page.text
+    assert "Без ограничения размера" in page.text
 
 
 def test_invalid_upload_has_safe_error(tmp_path: Path) -> None:
@@ -68,4 +86,3 @@ def test_oversized_upload_returns_413(tmp_path: Path) -> None:
 
     assert response.status_code == 413
     assert response.json()["error"] == "file_too_large"
-

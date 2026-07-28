@@ -10,7 +10,7 @@ from app.services.file_classifier import FileClassifier
 from app.services.upload_manager import UploadManager
 
 
-def build_manager(tmp_path: Path, max_size: int = 1024) -> UploadManager:
+def build_manager(tmp_path: Path, max_size: int | None = 1024) -> UploadManager:
     return UploadManager(
         upload_root=tmp_path,
         max_file_size_bytes=max_size,
@@ -72,3 +72,14 @@ async def test_empty_upload_is_stored(tmp_path: Path) -> None:
     assert stored.size == 0
     assert (tmp_path / stored.relative_path).read_bytes() == b""
 
+
+@pytest.mark.asyncio
+async def test_unlimited_upload_is_stored(tmp_path: Path) -> None:
+    manager = build_manager(tmp_path, max_size=None)
+    content = b"large-content" * 1024
+    upload = UploadFile(filename="unlimited.bin", file=BytesIO(content))
+
+    stored = await manager.store(upload, "192.168.1.20")
+
+    assert stored.size == len(content)
+    assert (tmp_path / stored.relative_path).read_bytes() == content

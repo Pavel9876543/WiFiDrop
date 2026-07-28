@@ -11,7 +11,6 @@ from app.config.settings import PROJECT_ROOT, get_settings
 from app.core.logging import configure_logging
 from app.services.upload_cleanup import remove_orphaned_uploads
 
-
 settings = get_settings()
 
 
@@ -26,11 +25,6 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.host,
         settings.port,
         settings.upload_dir,
-    )
-    application.mount(
-        "/static",
-        StaticFiles(directory=PROJECT_ROOT / "app" / "static"),
-        name="static",
     )
     try:
         yield
@@ -49,6 +43,11 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(application)
     application.include_router(router)
+    application.mount(
+        "/static",
+        StaticFiles(directory=PROJECT_ROOT / "app" / "static"),
+        name="static",
+    )
     return application
 
 
