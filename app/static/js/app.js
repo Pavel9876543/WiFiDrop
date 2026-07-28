@@ -5,7 +5,7 @@ import { Notifications } from "./notifications.js";
 import { initializePwa } from "./pwa.js";
 import { UploadQueue } from "./queue-state.js";
 import { initializeTheme } from "./theme.js";
-import { UploadCancelledError, uploadFile } from "./uploader.js";
+import { ServerBusyError, UploadCancelledError, uploadFile } from "./uploader.js";
 import { formatBytes, pluralizeFiles } from "./utils.js";
 
 const elements = {
@@ -110,6 +110,7 @@ async function startUpload() {
         succeededIds: new Set(),
         failedIds: new Set(),
         active: null,
+        busyError: null,
     };
     currentRun = run;
     render(queue.items);
@@ -149,6 +150,15 @@ async function startUpload() {
             if (error instanceof UploadCancelledError || run.cancelledIds.has(item.id)) {
                 run.cancelledIds.add(item.id);
                 queue.cancel(item.id);
+            } else if (error instanceof ServerBusyError) {
+                queue.update(item.id, {
+                    status: "error",
+                    progress: 0,
+                    loaded: 0,
+                    speed: 0,
+                    message: error.message,
+                });
+                run.busyError = error;
             } else {
                 queue.update(item.id, {
                     status: "error",
@@ -163,6 +173,7 @@ async function startUpload() {
             run.completedIds.add(item.id);
             run.active = null;
         }
+        if (run.busyError) break;
     }
 
     currentRun = null;
@@ -206,7 +217,13 @@ function showUploadResult(run, total) {
     const failed = run.failedIds.size;
     const cancelled = run.cancelledIds.size;
 
-    if (cancelled > 0) {
+    if (run.busyError) {
+        const retryHint = run.busyError.retryAfterSeconds
+            ? ` Повторите не раньше чем через ${run.busyError.retryAfterSeconds} сек.`
+            : "";
+        const completedHint = succeeded > 0 ? ` До этого загружено: ${succeeded}.` : "";
+        notifications.show(`${run.busyError.message}${retryHint}${completedHint}`, "error");
+    } else if (cancelled > 0) {
         if (succeeded === 0 && failed === 0) {
             notifications.show(`${pluralizeFiles(cancelled)} отменено.`);
             return;

@@ -7,6 +7,14 @@ export class UploadCancelledError extends Error {
     }
 }
 
+export class ServerBusyError extends Error {
+    constructor(message, retryAfterSeconds = null) {
+        super(message);
+        this.name = "ServerBusyError";
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+}
+
 export function uploadFile(file, onProgress, signal) {
     return new Promise((resolve, reject) => {
         if (signal?.aborted) {
@@ -48,6 +56,19 @@ export function uploadFile(file, onProgress, signal) {
             const payload = safeJsonParse(request.responseText);
             if (request.status >= 200 && request.status < 300 && payload?.success) {
                 finish(() => resolve(payload.file));
+                return;
+            }
+            if (request.status === 503 && payload?.error === "server_busy") {
+                const retryAfter = Number(request.getResponseHeader("Retry-After"));
+                const retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+                    ? Math.ceil(retryAfter)
+                    : null;
+                finish(() => {
+                    reject(new ServerBusyError(
+                        payload.message || "Сервер занят. Повторите отправку позже.",
+                        retryAfterSeconds,
+                    ));
+                });
                 return;
             }
             finish(() => {
