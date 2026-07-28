@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     log_dir: Path = Path("logs")
     log_retention_days: int = Field(default=30, ge=1)
     upload_chunk_size_kb: int = Field(default=1024, ge=64, le=16384)
+    max_concurrent_uploads: int = Field(default=1, ge=1, le=32)
+    upload_busy_retry_after_seconds: int = Field(default=5, ge=1, le=300)
 
     @field_validator("log_level")
     @classmethod

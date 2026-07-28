@@ -21,3 +21,17 @@ def test_positive_file_size_limit_is_converted_to_bytes() -> None:
 def test_negative_file_size_limit_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, max_file_size_mb=-1)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("max_concurrent_uploads", 0),
+        ("max_concurrent_uploads", 33),
+        ("upload_busy_retry_after_seconds", 0),
+        ("upload_busy_retry_after_seconds", 301),
+    ],
+)
+def test_upload_capacity_settings_are_bounded(field: str, value: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{field: value})
