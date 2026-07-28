@@ -36,6 +36,31 @@ export class UploadQueue {
         this.emit();
     }
 
+    get(id) {
+        return this.items.find((candidate) => candidate.id === id);
+    }
+
+    cancel(id) {
+        this.cancelMany([id]);
+    }
+
+    cancelMany(ids) {
+        const selectedIds = new Set(ids);
+        let changed = false;
+        for (const item of this.items) {
+            if (!selectedIds.has(item.id) || item.status === "success") continue;
+            Object.assign(item, {
+                status: "canceled",
+                progress: 0,
+                loaded: 0,
+                speed: 0,
+                message: "Загрузка отменена",
+            });
+            changed = true;
+        }
+        if (changed) this.emit();
+    }
+
     remove(id) {
         const item = this.items.find((candidate) => candidate.id === id);
         if (!item || item.status === "uploading") return;
@@ -50,7 +75,9 @@ export class UploadQueue {
     }
 
     get actionableItems() {
-        return this.items.filter((item) => item.status === "pending" || item.status === "error");
+        return this.items.filter((item) =>
+            item.status === "pending" || item.status === "error" || item.status === "canceled"
+        );
     }
 
     get isUploading() {

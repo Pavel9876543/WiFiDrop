@@ -10,12 +10,12 @@ const REMOVE_ICON = `
     </svg>`;
 
 export class FileListView {
-    constructor(container, onRemove) {
+    constructor(container, onAction) {
         this.container = container;
-        this.onRemove = onRemove;
+        this.onAction = onAction;
         this.container.addEventListener("click", (event) => {
-            const button = event.target.closest("[data-remove-id]");
-            if (button) this.onRemove(button.dataset.removeId);
+            const button = event.target.closest("[data-file-action-id]");
+            if (button) this.onAction(button.dataset.fileActionId);
         });
     }
 
@@ -44,7 +44,7 @@ export class FileListView {
         name.textContent = item.file.name;
         const percent = document.createElement("span");
         percent.className = "file-item__percent";
-        percent.textContent = item.status === "success" ? "Готово" : `${Math.round(item.progress)}%`;
+        percent.textContent = this.progressText(item);
         topLine.append(name, percent);
 
         const details = document.createElement("div");
@@ -66,19 +66,28 @@ export class FileListView {
         const remove = document.createElement("button");
         remove.className = "file-item__remove";
         remove.type = "button";
-        remove.dataset.removeId = item.id;
-        remove.ariaLabel = `Убрать ${item.file.name}`;
-        remove.disabled = item.status === "uploading";
+        remove.dataset.fileActionId = item.id;
+        const actionLabel = item.status === "uploading"
+            ? `Отменить загрузку ${item.file.name}`
+            : `Убрать ${item.file.name}`;
+        remove.ariaLabel = actionLabel;
+        remove.title = actionLabel;
         remove.innerHTML = REMOVE_ICON;
         row.append(icon, content, remove);
         return row;
+    }
+
+    progressText(item) {
+        if (item.status === "success") return "Готово";
+        if (item.status === "canceled") return "Отменено";
+        return `${Math.round(item.progress)}%`;
     }
 
     statusText(item) {
         if (item.status === "uploading") return formatSpeed(item.speed);
         if (item.status === "success") return item.result?.category || "Загружен";
         if (item.status === "error") return item.message || "Ошибка";
+        if (item.status === "canceled") return "Загрузка отменена";
         return "Ожидает";
     }
 }
-

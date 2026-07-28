@@ -1,12 +1,33 @@
 import { safeJsonParse } from "./utils.js";
 
-export function uploadFile(file, onProgress) {
+export class UploadCancelledError extends Error {
+    constructor() {
+        super("Загрузка отменена.");
+        this.name = "UploadCancelledError";
+    }
+}
+
+export function uploadFile(file, onProgress, signal) {
     return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new UploadCancelledError());
+            return;
+        }
+
         const request = new XMLHttpRequest();
         const formData = new FormData();
         let previousLoaded = 0;
         let previousTime = performance.now();
+        let settled = false;
         formData.append("file", file, file.name);
+
+        const finish = (callback) => {
+            if (settled) return;
+            settled = true;
+            signal?.removeEventListener("abort", abortRequest);
+            callback();
+        };
+        const abortRequest = () => request.abort();
 
         request.open("POST", "/api/uploads");
         request.timeout = 0;
@@ -26,16 +47,20 @@ export function uploadFile(file, onProgress) {
         request.addEventListener("load", () => {
             const payload = safeJsonParse(request.responseText);
             if (request.status >= 200 && request.status < 300 && payload?.success) {
-                resolve(payload.file);
+                finish(() => resolve(payload.file));
                 return;
             }
-            reject(new Error(payload?.message || `Сервер вернул ошибку ${request.status}.`));
+            finish(() => {
+                reject(new Error(payload?.message || `Сервер вернул ошибку ${request.status}.`));
+            });
         });
         request.addEventListener("error", () => {
-            reject(new Error("Соединение с компьютером потеряно."));
+            finish(() => reject(new Error("Соединение с компьютером потеряно.")));
         });
-        request.addEventListener("abort", () => reject(new Error("Загрузка отменена.")));
+        request.addEventListener("abort", () => {
+            finish(() => reject(new UploadCancelledError()));
+        });
+        signal?.addEventListener("abort", abortRequest, { once: true });
         request.send(formData);
     });
 }
-

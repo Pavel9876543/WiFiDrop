@@ -338,6 +338,10 @@
     color: var(--danger);
 }
 
+.text-button--danger {
+    color: var(--danger);
+}
+
 .file-list {
     display: grid;
     max-height: 390px;
@@ -412,6 +416,10 @@
     color: var(--danger);
 }
 
+.file-item__status--canceled {
+    color: var(--text-secondary);
+}
+
 .file-item__progress {
     height: 4px;
     margin-top: 8px;
@@ -446,11 +454,6 @@
 .file-item__remove:hover:not(:disabled) {
     color: var(--danger);
     background: var(--danger-soft);
-}
-
-.file-item__remove:disabled {
-    cursor: default;
-    opacity: 0.4;
 }
 
 .file-item__remove svg {

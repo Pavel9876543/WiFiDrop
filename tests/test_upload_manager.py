@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -83,3 +84,34 @@ async def test_unlimited_upload_is_stored(tmp_path: Path) -> None:
 
     assert stored.size == len(content)
     assert (tmp_path / stored.relative_path).read_bytes() == content
+
+
+@pytest.mark.asyncio
+async def test_cancelled_upload_removes_partial_file(tmp_path: Path) -> None:
+    class CancellableUpload:
+        filename = "cancelled.bin"
+        content_type = "application/octet-stream"
+
+        def __init__(self) -> None:
+            self.read_count = 0
+            self.waiting_for_more_data = asyncio.Event()
+
+        async def read(self, _: int) -> bytes:
+            self.read_count += 1
+            if self.read_count == 1:
+                return b"partial"
+            self.waiting_for_more_data.set()
+            await asyncio.Event().wait()
+            return b""
+
+    manager = build_manager(tmp_path)
+    upload = CancellableUpload()
+    task = asyncio.create_task(manager.store(upload, "192.168.1.20"))  # type: ignore[arg-type]
+    await upload.waiting_for_more_data.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not list(tmp_path.rglob("*.part"))
+    assert not list(tmp_path.rglob("cancelled.bin"))

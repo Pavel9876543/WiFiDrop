@@ -66,6 +66,10 @@ class UploadManager:
                 await destination.flush()
 
             final_path = await self._finalize(temporary_path, destination_dir, safe_name)
+        except asyncio.CancelledError:
+            await asyncio.shield(self._remove_partial_file(temporary_path))
+            logger.info("Upload cancelled | client=%s | file=%s", client_ip, original_name)
+            raise
         except FileTooLargeError:
             await self._remove_partial_file(temporary_path)
             logger.warning("Upload rejected from %s: %s", client_ip, original_name)
