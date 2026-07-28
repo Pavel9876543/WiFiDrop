@@ -7,7 +7,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.exceptions import WiFiDropError
 
-
 logger = logging.getLogger("wifidrop.errors")
 
 

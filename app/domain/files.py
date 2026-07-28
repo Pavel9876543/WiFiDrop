@@ -1,13 +1,7 @@
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
-
-class StrEnum(str, Enum):
-    """Совместимый аналог enum.StrEnum для Python 3.10."""
-
-    def __str__(self) -> str:
-        return self.value
 
 class FileCategory(StrEnum):
     DOCUMENTS = "Documents"
@@ -25,4 +19,3 @@ class StoredFile:
     category: FileCategory
     size: int
     relative_path: Path
-

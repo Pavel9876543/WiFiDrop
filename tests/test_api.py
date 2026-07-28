@@ -149,3 +149,51 @@ async def test_concurrent_upload_is_rejected_while_other_routes_stay_available()
     }
     assert health_response.status_code == 200
     assert manager.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelled_request_releases_upload_slot() -> None:
+    class CancelOnceUploadManager:
+        def __init__(self) -> None:
+            self.first_started = asyncio.Event()
+            self.never_release_first = asyncio.Event()
+            self.calls = 0
+
+        async def store(self, upload: object, client_ip: str) -> StoredFile:
+            del upload, client_ip
+            self.calls += 1
+            if self.calls == 1:
+                self.first_started.set()
+                await self.never_release_first.wait()
+            return StoredFile(
+                original_name="saved.txt",
+                saved_name="saved.txt",
+                category=FileCategory.DOCUMENTS,
+                size=5,
+                relative_path=Path("Documents/2026-07-27/saved.txt"),
+            )
+
+    application = create_app()
+    manager = CancelOnceUploadManager()
+    application.dependency_overrides[get_upload_manager] = lambda: manager
+    transport = ASGITransport(app=application)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        cancelled_upload = asyncio.create_task(
+            client.post(
+                "/api/uploads",
+                files={"file": ("cancelled.txt", b"first", "text/plain")},
+            )
+        )
+        await asyncio.wait_for(manager.first_started.wait(), timeout=1)
+        cancelled_upload.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_upload
+
+        next_response = await client.post(
+            "/api/uploads",
+            files={"file": ("saved.txt", b"saved", "text/plain")},
+        )
+
+    assert next_response.status_code == 201
+    assert manager.calls == 2

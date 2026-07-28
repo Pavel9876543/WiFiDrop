@@ -6,7 +6,6 @@ from app.api.dependencies import get_upload_manager
 from app.api.schemas import ErrorResponse, StoredFileResponse, UploadResponse
 from app.services.upload_manager import UploadManager
 
-
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 

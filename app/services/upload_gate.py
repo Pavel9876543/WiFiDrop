@@ -69,7 +69,7 @@ class UploadCapacityMiddleware:
         try:
             await self._app(scope, receive, send)
         finally:
-            await self._gate.release()
+            await asyncio.shield(self._gate.release())
 
     @staticmethod
     def _is_upload_request(scope: Scope) -> bool:

@@ -4,7 +4,6 @@ from pathlib import Path
 
 from app.core.exceptions import UnsafeFilenameError
 
-
 WINDOWS_RESERVED_NAMES = {
     "CON",
     "PRN",
