@@ -13,4 +13,5 @@ Files/
 .vscode/
 Thumbs.db
 .DS_Store
+.env
 
