@@ -33,6 +33,9 @@ def test_home_page_and_health(tmp_path: Path) -> None:
     assert "WiFiDrop" in page.text
     assert 'rel="manifest"' in page.text
     assert 'id="install-app-button"' in page.text
+    assert 'id="file-input" type="file" multiple' in page.text
+    assert 'for="file-input"' in page.text
+    assert 'multiple hidden' not in page.text
     assert health.json() == {"status": "ok"}
     assert service_worker.status_code == 200
     assert service_worker.headers["service-worker-allowed"] == "/"

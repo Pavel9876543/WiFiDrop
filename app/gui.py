@@ -128,6 +128,7 @@ class WiFiDropWindow(QMainWindow):
         self.open_button = QPushButton("Открыть сайт")
         self.settings_button = QPushButton("Настройки хот-спота Windows")
         self.app_settings_button = QPushButton("Настройки WiFiDrop")
+        self.app_settings_button.setCheckable(True)
         self.stop_button.setEnabled(False)
         self.open_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_server)
@@ -209,8 +210,8 @@ class WiFiDropWindow(QMainWindow):
         settings_layout.addWidget(self.save_settings_button, len(settings_rows) + 2, 1)
         settings_layout.setColumnStretch(1, 1)
         settings_box.setVisible(False)
-        self.app_settings_button.clicked.connect(settings_box.setVisible)
-        self.app_settings_button.clicked.connect(
+        self.app_settings_button.toggled.connect(settings_box.setVisible)
+        self.app_settings_button.toggled.connect(
             lambda visible: self.app_settings_button.setText(
                 "Скрыть настройки WiFiDrop" if visible else "Настройки WiFiDrop"
             )
