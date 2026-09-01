@@ -78,8 +78,9 @@ $items | ConvertTo-Json -Compress
 
 
 def open_mobile_hotspot_settings() -> None:
-    subprocess.run(
+    # Launch and return immediately so opening Settings can never block the Qt UI.
+    subprocess.Popen(
         ["cmd.exe", "/c", "start", "", "ms-settings:network-mobilehotspot"],
-        capture_output=True,
-        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
