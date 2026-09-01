@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "wifidrop"
 version = "1.0.0"
 description = "Local Wi-Fi file transfer server"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "aiofiles>=25.1,<26",
     "fastapi>=0.116,<0.141",
@@ -14,7 +14,9 @@ dependencies = [
     "pydantic>=2.11,<2.13",
     "pydantic-settings>=2.10,<2.14",
     "python-multipart>=0.0.20,<1",
+    "starlette>=0.40,<0.53",
     "uvicorn>=0.35,<1",
+    "PyQt6>=6.7,<7",
 ]
 
 [project.optional-dependencies]
@@ -33,7 +35,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
