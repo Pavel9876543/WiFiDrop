@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     captive_portal_port: int = Field(default=80, ge=1, le=65535)
     captive_portal_public_url: str | None = None
     hotspot_enabled: bool = False
+    auto_create_hotspot: bool = True
     hotspot_ssid: str = "WiFiDrop"
-    hotspot_password: str = "WiFiDrop2026"
+    hotspot_password: str = "12347890"
     hotspot_gateway_ip: str = "192.168.50.1"
 
     @field_validator("log_level")

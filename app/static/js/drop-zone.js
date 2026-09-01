@@ -1,8 +1,23 @@
 export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
-    const openPicker = () => fileInput.click();
+    const openPicker = () => {
+        // Chrome требует открывать окно выбора непосредственно из пользовательского
+        // клика/касания. Сначала используем стандартный showPicker(), а click()
+        // оставляем как совместимый fallback для остальных браузеров.
+        if (typeof fileInput.showPicker === "function") {
+            try {
+                fileInput.showPicker();
+                return;
+            } catch (error) {
+                if (error?.name !== "NotAllowedError" && error?.name !== "InvalidStateError") {
+                    throw error;
+                }
+            }
+        }
+        fileInput.click();
+    };
 
     dropZone.addEventListener("click", (event) => {
-        if (event.target !== browseButton) openPicker();
+        if (!browseButton.contains(event.target)) openPicker();
     });
     browseButton.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -36,4 +51,3 @@ export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
     document.addEventListener("dragover", (event) => event.preventDefault());
     document.addEventListener("drop", (event) => event.preventDefault());
 }
-

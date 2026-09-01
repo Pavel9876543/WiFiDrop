@@ -24,9 +24,18 @@ if errorlevel 1 (
 
 "%PYTHON_EXE%" -c "import PyQt6, aiofiles, fastapi, jinja2, psutil, pydantic, pydantic_settings, multipart, uvicorn" >nul 2>&1
 if errorlevel 1 (
+    "%PYTHON_EXE%" -m pip --version >nul 2>&1
+    if errorlevel 1 (
+        "%PYTHON_EXE%" -m ensurepip --upgrade >nul 2>&1
+    )
     "%PYTHON_EXE%" -m pip install --disable-pip-version-check -r "%~dp0requirements.txt"
     if errorlevel 1 (
-        wscript.exe //nologo "%~dp0WiFiDrop.vbs" error "Failed to install WiFiDrop dependencies. Check the Internet connection and Python installation."
+        wscript.exe //nologo "%~dp0WiFiDrop.vbs" error "Failed to install WiFiDrop dependencies automatically. Check the Internet connection and Python installation."
+        exit /b 1
+    )
+    "%PYTHON_EXE%" -c "import PyQt6, aiofiles, fastapi, jinja2, psutil, pydantic, pydantic_settings, multipart, uvicorn" >nul 2>&1
+    if errorlevel 1 (
+        wscript.exe //nologo "%~dp0WiFiDrop.vbs" error "Dependencies were installed, but WiFiDrop still cannot import them. Check the Python installation."
         exit /b 1
     )
 )

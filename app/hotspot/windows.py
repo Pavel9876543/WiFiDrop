@@ -180,6 +180,71 @@ def stop_hosted_network() -> None:
     _run(["netsh", "wlan", "stop", "hostednetwork"], check=False)
 
 
+
+def _run_elevated_hotspot_helper(params: str, marker: Path, timeout: float = 30.0) -> dict[str, object]:
+    result = ctypes.windll.shell32.ShellExecuteW(
+        None,
+        "runas",
+        _pythonw_executable(),
+        f'-X utf8 -m app.hotspot.elevation_helper {params} --marker "{marker}"',
+        str(Path(__file__).resolve().parents[2]),
+        0,
+    )
+    if int(result) <= 32:
+        return {"ok": False, "error": "Запрос прав администратора был отменён или не удалось запустить помощник."}
+    deadline = time.monotonic() + timeout
+    try:
+        while time.monotonic() < deadline:
+            if marker.exists():
+                import json
+                return json.loads(marker.read_text(encoding="utf-8", errors="replace"))
+            time.sleep(0.15)
+        return {"ok": False, "error": "Истекло время ожидания настройки Wi-Fi сети."}
+    finally:
+        marker.unlink(missing_ok=True)
+
+
+def ensure_hosted_network_with_elevation(ssid: str, password: str, gateway_ip: str, timeout: float = 30.0) -> tuple[bool, str | None]:
+    """Создать/запустить Hosted Network, запрашивая UAC только при необходимости."""
+    if os.name != "nt":
+        return False, "Автоматическое создание Wi-Fi сети поддерживается только в Windows."
+    if is_windows_admin():
+        try:
+            adapter = configure_and_start_hosted_network(ssid, password)
+            configure_adapter(adapter.name, gateway_ip)
+            return True, None
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
+
+    import json
+    request_path = Path(tempfile.gettempdir()) / f"wifidrop_hotspot_request_{os.getpid()}_{int(time.time() * 1000)}.json"
+    marker = Path(tempfile.gettempdir()) / f"wifidrop_hotspot_{os.getpid()}_{int(time.time() * 1000)}.json"
+    request_path.write_text(
+        json.dumps({"ssid": ssid, "password": password, "gateway_ip": gateway_ip}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    try:
+        payload = _run_elevated_hotspot_helper(
+            f'start --request "{request_path}"',
+            marker,
+            timeout,
+        )
+        return bool(payload.get("ok")), None if payload.get("ok") else str(payload.get("error") or "Не удалось создать Wi-Fi сеть.")
+    finally:
+        request_path.unlink(missing_ok=True)
+
+
+def stop_hosted_network_with_elevation(timeout: float = 15.0) -> bool:
+    if os.name != "nt":
+        return True
+    if is_windows_admin():
+        stop_hosted_network()
+        return True
+    marker = Path(tempfile.gettempdir()) / f"wifidrop_hotspot_stop_{os.getpid()}_{int(time.time() * 1000)}.json"
+    payload = _run_elevated_hotspot_helper("stop", marker, timeout)
+    return bool(payload.get("ok"))
+
+
 def open_mobile_hotspot_settings() -> None:
     if os.name == "nt":
         os.startfile("ms-settings:network-mobilehotspot")  # type: ignore[attr-defined]

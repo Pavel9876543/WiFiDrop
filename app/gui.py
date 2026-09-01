@@ -41,9 +41,14 @@ from PyQt6.QtWidgets import (
 
 from app.config.env_file import update_env_file
 from app.config.settings import PROJECT_ROOT, Settings, get_settings
+from app.hotspot.dhcp import CaptiveDhcpServer
 from app.hotspot.dns import CaptiveDnsServer
 from app.hotspot.mobile_windows import detect_mobile_hotspot, open_mobile_hotspot_settings
-from app.hotspot.windows import ensure_firewall_rules_with_elevation
+from app.hotspot.windows import (
+    ensure_firewall_rules_with_elevation,
+    ensure_hosted_network_with_elevation,
+    stop_hosted_network_with_elevation,
+)
 
 
 class WorkerSignals(QObject):
@@ -78,6 +83,8 @@ class StartPreflight:
     captive_tcp_free: bool
     dns_port_free: bool
     firewall_message: str | None
+    auto_created_hotspot: bool = False
+    hotspot_error: str | None = None
 
 
 class WiFiDropWindow(QMainWindow):
@@ -140,9 +147,9 @@ class WiFiDropWindow(QMainWindow):
         layout.addLayout(buttons)
 
         help_label = QLabel(
-            "Подключите телефон к мобильному хот-споту Windows. WiFiDrop автоматически определит "
-            "внутренний IP хот-спота и покажет точный адрес сайта. Состояние Captive Portal ниже "
-            "показывает, может ли WiFiDrop управлять DNS на этом хот-споте."
+            "WiFiDrop сначала ищет уже работающий мобильный хот-спот Windows. Если его нет, программа "
+            "пытается автоматически создать Wi-Fi сеть с именем и паролем из настроек. Телефон можно "
+            "подключить к этой сети и открыть показанный ниже адрес."
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
@@ -175,7 +182,7 @@ class WiFiDropWindow(QMainWindow):
         self.captive_port_input.setRange(1, 65535)
         self.captive_url_input = QLineEdit()
         self.captive_url_input.setPlaceholderText("Автоматически определить адрес")
-        self.hotspot_enabled_input = QCheckBox("Включать автономный Hosted Network (run_hotspot.bat)")
+        self.hotspot_enabled_input = QCheckBox("Автоматически создавать Wi-Fi сеть, если она не найдена")
         self.hotspot_ssid_input = QLineEdit()
         self.hotspot_password_input = QLineEdit()
         self.hotspot_password_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -193,9 +200,9 @@ class WiFiDropWindow(QMainWindow):
             ("Хранить логи:", self.log_retention_input, "Через сколько дней старые журналы удаляются."),
             ("HTTP-порт Captive Portal:", self.captive_port_input, "Обычно 80 — стандартный порт системных проверок Wi-Fi."),
             ("Публичный URL портала:", self.captive_url_input, "Можно оставить пустым для автоматического определения."),
-            ("SSID автономной точки:", self.hotspot_ssid_input, "Используется только старым автономным режимом run_hotspot.bat."),
-            ("Пароль автономной точки:", self.hotspot_password_input, "Используется только старым автономным режимом run_hotspot.bat; минимум 8 символов."),
-            ("IP автономной точки:", self.hotspot_gateway_input, "Шлюз автономной сети run_hotspot.bat, например 192.168.50.1."),
+            ("Имя сети:", self.hotspot_ssid_input, "Имя Wi-Fi сети, которую WiFiDrop создаст автоматически при отсутствии подходящего хот-спота."),
+            ("Сетевой пароль:", self.hotspot_password_input, "Пароль создаваемой Wi-Fi сети; минимум 8 символов."),
+            ("IP создаваемой сети:", self.hotspot_gateway_input, "Локальный адрес компьютера в автоматически создаваемой сети, например 192.168.50.1."),
         ]
         for row, (label_text, widget, tooltip) in enumerate(settings_rows):
             label = QLabel(label_text)
@@ -230,6 +237,9 @@ class WiFiDropWindow(QMainWindow):
         self.current_url: str | None = None
         self.dns_server: CaptiveDnsServer | None = None
         self.dns_thread: threading.Thread | None = None
+        self.dhcp_server: CaptiveDhcpServer | None = None
+        self.dhcp_thread: threading.Thread | None = None
+        self._auto_created_hotspot = False
 
         self.timer = QTimer(self)
         self.timer.setInterval(2000)
@@ -251,7 +261,7 @@ class WiFiDropWindow(QMainWindow):
         self.captive_enabled_input.setChecked(settings.captive_portal_enabled)
         self.captive_port_input.setValue(settings.captive_portal_port)
         self.captive_url_input.setText(settings.captive_portal_public_url or "")
-        self.hotspot_enabled_input.setChecked(settings.hotspot_enabled)
+        self.hotspot_enabled_input.setChecked(settings.auto_create_hotspot)
         self.hotspot_ssid_input.setText(settings.hotspot_ssid)
         self.hotspot_password_input.setText(settings.hotspot_password)
         self.hotspot_gateway_input.setText(settings.hotspot_gateway_ip)
@@ -270,9 +280,10 @@ class WiFiDropWindow(QMainWindow):
             "captive_portal_enabled": self.captive_enabled_input.isChecked(),
             "captive_portal_port": self.captive_port_input.value(),
             "captive_portal_public_url": self.captive_url_input.text().strip() or None,
-            "hotspot_enabled": self.hotspot_enabled_input.isChecked(),
+            "hotspot_enabled": self.settings.hotspot_enabled,
+            "auto_create_hotspot": self.hotspot_enabled_input.isChecked(),
             "hotspot_ssid": self.hotspot_ssid_input.text().strip() or "WiFiDrop",
-            "hotspot_password": self.hotspot_password_input.text(),
+            "hotspot_password": self.hotspot_password_input.text() or "12347890",
             "hotspot_gateway_ip": self.hotspot_gateway_input.text().strip() or "192.168.50.1",
         }
         try:
@@ -291,6 +302,7 @@ class WiFiDropWindow(QMainWindow):
                 "CAPTIVE_PORTAL_PORT": validated.captive_portal_port,
                 "CAPTIVE_PORTAL_PUBLIC_URL": validated.captive_portal_public_url or "",
                 "HOTSPOT_ENABLED": validated.hotspot_enabled,
+                "AUTO_CREATE_HOTSPOT": validated.auto_create_hotspot,
                 "HOTSPOT_SSID": validated.hotspot_ssid,
                 "HOTSPOT_PASSWORD": validated.hotspot_password,
                 "HOTSPOT_GATEWAY_IP": validated.hotspot_gateway_ip,
@@ -412,8 +424,26 @@ class WiFiDropWindow(QMainWindow):
 
         def preflight() -> StartPreflight:
             info = detect_mobile_hotspot() if os.name == "nt" else None
+            auto_created = False
+            hotspot_error: str | None = None
+            if info is None and os.name == "nt" and self.settings.auto_create_hotspot:
+                ok, hotspot_error = ensure_hosted_network_with_elevation(
+                    self.settings.hotspot_ssid,
+                    self.settings.hotspot_password,
+                    self.settings.hotspot_gateway_ip,
+                )
+                if ok:
+                    auto_created = True
+                    # Помощник уже назначил приватный адрес шлюза; даём адаптеру
+                    # немного времени появиться в сетевом API Windows.
+                    import time
+                    for _ in range(20):
+                        info = detect_mobile_hotspot()
+                        if info is not None:
+                            break
+                        time.sleep(0.1)
             if info is None:
-                return StartPreflight(None, True, False, None)
+                return StartPreflight(None, True, False, None, auto_created, hotspot_error)
 
             firewall_message: str | None = None
             if os.name == "nt":
@@ -431,6 +461,8 @@ class WiFiDropWindow(QMainWindow):
                 captive_tcp_free=self._tcp_port_available("0.0.0.0", self.settings.captive_portal_port),
                 dns_port_free=self._udp_port_available(info.ipv4, 53),
                 firewall_message=firewall_message,
+                auto_created_hotspot=auto_created,
+                hotspot_error=hotspot_error,
             )
 
         self._start_worker(preflight, self._start_after_preflight, self._start_preflight_failed)
@@ -446,13 +478,22 @@ class WiFiDropWindow(QMainWindow):
         info = result.info
         if info is None:
             self.start_button.setEnabled(True)
+            detail = result.hotspot_error or "Подходящая Wi-Fi сеть не обнаружена."
             QMessageBox.warning(
                 self,
-                "Хот-спот не найден",
-                "Сначала включите «Мобильный хот-спот» Windows. После его включения WiFiDrop автоматически определит адрес.",
+                "Не удалось подготовить Wi-Fi сеть",
+                f"WiFiDrop попытался создать сеть автоматически, но это не удалось.\n\n{detail}\n\n"
+                "Будут открыты штатные настройки «Мобильный хот-спот» Windows.",
             )
             open_mobile_hotspot_settings()
             return
+
+        self._auto_created_hotspot = result.auto_created_hotspot
+        if result.auto_created_hotspot:
+            self.append_log(
+                f"[GUI] Автоматически создана Wi-Fi сеть «{self.settings.hotspot_ssid}» "
+                f"с адресом {self.settings.hotspot_gateway_ip}."
+            )
 
         if result.firewall_message:
             self.append_log(result.firewall_message)
@@ -465,7 +506,38 @@ class WiFiDropWindow(QMainWindow):
                 f"TCP-порт {self.settings.captive_portal_port} уже используется другой программой. "
                 "Освободите его и повторите запуск.",
             )
+            self._stop_auto_created_hotspot()
             return
+
+        if self._auto_created_hotspot:
+            if not self._udp_port_available("0.0.0.0", 67):
+                self.start_button.setEnabled(True)
+                QMessageBox.critical(
+                    self,
+                    "DHCP-порт занят",
+                    "UDP-порт 67 занят другой службой. Автоматически созданная сеть не сможет выдавать адреса устройствам.",
+                )
+                self._stop_auto_created_hotspot()
+                return
+            try:
+                prefix = info.ipv4.rsplit(".", 1)[0]
+                self.dhcp_server = CaptiveDhcpServer(
+                    info.ipv4,
+                    info.ipv4,
+                    f"{prefix}.10",
+                    f"{prefix}.200",
+                )
+                self.dhcp_thread = threading.Thread(
+                    target=self.dhcp_server.serve_forever,
+                    name="wifidrop-hosted-network-dhcp",
+                    daemon=True,
+                )
+                self.dhcp_thread.start()
+                self.append_log(f"[GUI] DHCP запущен для автоматически созданной сети {self.settings.hotspot_ssid}.")
+            except OSError as exc:
+                self.dhcp_server = None
+                self.dhcp_thread = None
+                self.append_log(f"[GUI] DHCP не запущен: {exc}")
 
         if result.dns_port_free:
             try:
@@ -505,8 +577,21 @@ class WiFiDropWindow(QMainWindow):
         self.site_status.setText(self.current_url)
         self.open_button.setEnabled(True)
 
+    def _stop_auto_created_hotspot(self) -> None:
+        if not self._auto_created_hotspot:
+            return
+        self._auto_created_hotspot = False
+        self._start_worker(
+            stop_hosted_network_with_elevation,
+            lambda ok: self.append_log(
+                "[GUI] Автоматически созданная Wi-Fi сеть остановлена." if ok
+                else "[GUI] Не удалось автоматически остановить Wi-Fi сеть."
+            ),
+        )
+
     def stop_server(self) -> None:
         if not self.process_is_running():
+            self._stop_auto_created_hotspot()
             return
         self.append_log("[GUI] Остановка WiFiDrop...")
         self.stop_button.setEnabled(False)
@@ -514,6 +599,11 @@ class WiFiDropWindow(QMainWindow):
             self.dns_server.stop()
             self.dns_server = None
             self.dns_thread = None
+        if self.dhcp_server is not None:
+            self.dhcp_server.stop()
+            self.dhcp_server = None
+            self.dhcp_thread = None
+        self._stop_auto_created_hotspot()
         self.process.terminate()
         # Never block the Qt event loop waiting for a child process. If graceful
         # shutdown takes too long, kill it from a timer callback instead.
@@ -547,6 +637,11 @@ class WiFiDropWindow(QMainWindow):
             self.dns_server.stop()
             self.dns_server = None
             self.dns_thread = None
+        if self.dhcp_server is not None:
+            self.dhcp_server.stop()
+            self.dhcp_server = None
+            self.dhcp_thread = None
+        self._stop_auto_created_hotspot()
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.open_button.setEnabled(False)
@@ -561,9 +656,17 @@ class WiFiDropWindow(QMainWindow):
         if self.dns_server is not None:
             self.dns_server.stop()
             self.dns_server = None
+        if self.dhcp_server is not None:
+            self.dhcp_server.stop()
+            self.dhcp_server = None
         if self.process_is_running():
             self.process.terminate()
             self.process.kill()
+        if self._auto_created_hotspot:
+            # Приложение уже закрывается, поэтому фонового Qt-цикла для очистки
+            # не останется. Останавливаем созданную сеть до выхода.
+            stop_hosted_network_with_elevation()
+            self._auto_created_hotspot = False
         super().closeEvent(event)
 
 

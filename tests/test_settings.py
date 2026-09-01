@@ -47,3 +47,11 @@ def test_hotspot_settings_validation() -> None:
 def test_upload_capacity_settings_are_bounded(field: str, value: int) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **{field: value})
+
+
+def test_gui_auto_hotspot_defaults() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.auto_create_hotspot is True
+    assert settings.hotspot_enabled is False
+    assert settings.hotspot_ssid == "WiFiDrop"
+    assert settings.hotspot_password == "12347890"
