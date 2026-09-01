@@ -1,4 +1,4 @@
-const CACHE_NAME = "wifidrop-shell-v5";
+const CACHE_NAME = "wifidrop-shell-v6";
 const APP_SHELL = [
     "/",
     "/static/manifest.webmanifest",

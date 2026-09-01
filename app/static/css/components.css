@@ -186,22 +186,6 @@
     backdrop-filter: blur(20px);
 }
 
-/* Keep the native file input in the document instead of using hidden/display:none.
-   This is more compatible with captive-portal WebViews. */
-.native-file-input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-    opacity: 0;
-    pointer-events: none;
-}
-
 .drop-zone {
     display: flex;
     min-height: 350px;
@@ -674,6 +658,15 @@
 
 .browser-launch__button {
     text-decoration: none;
+}
+
+.browser-launch[hidden],
+.transfer-card[hidden] {
+    display: none !important;
+}
+
+.hero--captive {
+    padding-bottom: 22px;
 }
 
 .browser-launch__hint {

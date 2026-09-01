@@ -11,6 +11,8 @@ import { formatBytes, pluralizeFiles } from "./utils.js";
 
 const elements = {
     browseButton: document.querySelector("#browse-button"),
+    openBrowserButton: document.querySelector("#open-browser-button"),
+    androidBrowserChooser: document.querySelector("#android-browser-chooser"),
     copyBrowserUrl: document.querySelector("#copy-browser-url"),
     browserLaunchHint: document.querySelector("#browser-launch-hint"),
     clearButton: document.querySelector("#clear-button"),
@@ -33,7 +35,10 @@ const maxFileSizeMb = Number(document.body.dataset.maxFileSizeMb);
 const hasFileSizeLimit = Number.isFinite(maxFileSizeMb) && maxFileSizeMb > 0;
 const maxFileSizeBytes = hasFileSizeLimit ? maxFileSizeMb * 1024 * 1024 : null;
 const notifications = new Notifications(elements.toastRegion);
+const isCaptive = document.body.dataset.captive === "1";
 initializeBrowserLaunch(
+    elements.openBrowserButton,
+    elements.androidBrowserChooser,
     elements.copyBrowserUrl,
     elements.browserLaunchHint,
     (message, type) => notifications.show(message, type),
@@ -53,7 +58,9 @@ const fileList = new FileListView(elements.fileList, handleFileAction);
 let currentRun = null;
 
 initializeTheme(elements.themeToggle);
-initializePwa(elements.installButton, (message) => notifications.show(message, "success"));
+if (!isCaptive) {
+    initializePwa(elements.installButton, (message) => notifications.show(message, "success"));
+}
 initializeDropZone(
     elements.dropZone,
     elements.fileInput,
