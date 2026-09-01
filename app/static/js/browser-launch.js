@@ -28,67 +28,95 @@ function isAppleMobile() {
         || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-function buildAndroidIntentUrl(rawUrl) {
+function buildAndroidPackageIntent(rawUrl, packageName) {
     const url = new URL(rawUrl, window.location.href);
     const scheme = url.protocol.replace(":", "");
     const path = `${url.host}${url.pathname}${url.search}${url.hash}`;
-    const fallback = encodeURIComponent(url.href);
-    return `intent://${path}#Intent;scheme=${scheme};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${fallback};end`;
+    return `intent://${path}#Intent;scheme=${scheme};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=${packageName};end`;
 }
 
-function showAttemptHint(hintElement, text) {
+function buildIosUrl(rawUrl, browser) {
+    const encoded = encodeURIComponent(rawUrl);
+    if (browser === "chrome") {
+        return rawUrl.replace(/^http:/, "googlechrome:").replace(/^https:/, "googlechromes:");
+    }
+    if (browser === "firefox") return `firefox://open-url?url=${encoded}`;
+    return "";
+}
+
+function showHint(hintElement, text, success = false) {
     if (!hintElement) return;
     hintElement.textContent = text;
-    hintElement.classList.remove("browser-launch__hint--success");
+    hintElement.classList.toggle("browser-launch__hint--success", success);
 }
 
 export function initializeBrowserLaunch(openButton, chooserButton, copyButton, hintElement, notify) {
-    if (!openButton && !copyButton) return;
-
-    const rawUrl = openButton?.href || copyButton?.dataset.url || "";
+    const rawUrl = openButton?.dataset.url || chooserButton?.dataset.url || copyButton?.dataset.url || "";
+    const chooser = document.querySelector("#browser-picker");
+    const closeButton = document.querySelector("#browser-picker-close");
+    const browserButtons = [...document.querySelectorAll("[data-browser-target]")];
     const android = isAndroid();
     const apple = isAppleMobile();
 
-    if (android && chooserButton) {
-        chooserButton.hidden = false;
-        chooserButton.addEventListener("click", () => {
-            if (!rawUrl) return;
-            showAttemptHint(
-                hintElement,
-                "Android: передаём ссылку системе. Если браузер по умолчанию не выбран, система может показать список подходящих приложений.",
-            );
-            window.location.href = buildAndroidIntentUrl(rawUrl);
+    const openChooser = (event) => {
+        event?.preventDefault();
+        if (!chooser) return;
+        chooser.hidden = false;
+        document.body.classList.add("browser-picker-open");
+        browserButtons.forEach((button) => {
+            const platforms = (button.dataset.platforms || "").split(",");
+            button.hidden = platforms.length > 0 && !platforms.includes(android ? "android" : apple ? "ios" : "other");
         });
-    }
+        showHint(hintElement, "Сначала выберите браузер. WiFiDrop не открывает браузер по умолчанию автоматически.");
+    };
 
-    if (openButton) {
-        openButton.addEventListener("click", (event) => {
+    openButton?.addEventListener("click", openChooser);
+    chooserButton?.addEventListener("click", openChooser);
+    closeButton?.addEventListener("click", () => {
+        chooser.hidden = true;
+        document.body.classList.remove("browser-picker-open");
+    });
+
+    browserButtons.forEach((button) => {
+        button.addEventListener("click", () => {
             if (!rawUrl) return;
-
+            const browser = button.dataset.browserTarget;
             if (android) {
-                event.preventDefault();
-                showAttemptHint(hintElement, "Пытаемся открыть WiFiDrop во внешнем браузере Android…");
-                window.location.href = buildAndroidIntentUrl(rawUrl);
+                const packages = {
+                    chrome: "com.android.chrome",
+                    firefox: "org.mozilla.firefox",
+                    yandex: "com.yandex.browser",
+                    edge: "com.microsoft.emmx",
+                    brave: "com.brave.browser",
+                    opera: "com.opera.browser",
+                };
+                const packageName = packages[browser];
+                if (!packageName) return;
+                showHint(hintElement, `Открываем ${button.textContent.trim()}…`);
+                window.location.href = buildAndroidPackageIntent(rawUrl, packageName);
                 return;
             }
-
             if (apple) {
-                // iOS chooses the configured default browser for normal HTTP(S) links.
-                // Captive Web Sheet itself can still decide to keep the navigation inside.
-                showAttemptHint(hintElement, "Передаём ссылку браузеру, выбранному в iPhone/iPad по умолчанию…");
+                const target = buildIosUrl(rawUrl, browser);
+                if (!target) {
+                    showHint(hintElement, "Для этого браузера iPhone не предоставляет надёжной публичной схему запуска. Скопируйте адрес.");
+                    return;
+                }
+                showHint(hintElement, `Открываем ${button.textContent.trim()}…`);
+                window.location.href = target;
+                return;
             }
+            showHint(hintElement, "На этой платформе принудительный выбор браузера недоступен. Скопируйте адрес.");
         });
-    }
+    });
 
     copyButton?.addEventListener("click", async () => {
-        const url = copyButton.dataset.url || rawUrl;
-        if (!url) return;
+        if (!rawUrl) return;
         try {
-            const copied = await copyText(url);
+            const copied = await copyText(rawUrl);
             if (!copied) throw new Error("copy failed");
             copyButton.textContent = "Адрес скопирован";
-            hintElement?.classList.add("browser-launch__hint--success");
-            if (hintElement) hintElement.textContent = "Адрес скопирован. Откройте любой браузер и вставьте его в адресную строку.";
+            showHint(hintElement, "Адрес скопирован. Откройте нужный браузер вручную и вставьте его.", true);
             notify?.("Адрес WiFiDrop скопирован.", "success");
             window.setTimeout(() => {
                 copyButton.textContent = "Скопировать адрес";

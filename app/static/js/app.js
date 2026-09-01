@@ -6,7 +6,7 @@ import { Notifications } from "./notifications.js";
 import { initializePwa } from "./pwa.js";
 import { UploadQueue } from "./queue-state.js";
 import { initializeTheme } from "./theme.js";
-import { UploadCancelledError, uploadFile } from "./uploader.js";
+import { ServerBusyError, UploadCancelledError, uploadFile } from "./uploader.js";
 import { formatBytes, pluralizeFiles } from "./utils.js";
 
 const elements = {
@@ -56,6 +56,8 @@ const scheduleRender = (items) => {
 const queue = new UploadQueue(maxFileSizeBytes, scheduleRender);
 const fileList = new FileListView(elements.fileList, handleFileAction);
 let currentRun = null;
+let busyRetryAllowedAt = 0;
+let busyRetryTimer = null;
 
 initializeTheme(elements.themeToggle);
 if (!isCaptive) {
@@ -90,24 +92,35 @@ function addFiles(files) {
 }
 
 function render(items) {
-    const isUploading = currentRun !== null;
     fileList.render(items);
     elements.queue.hidden = items.length === 0;
     elements.queueSummary.textContent = `${pluralizeFiles(items.length)} · ${formatBytes(
         items.reduce((total, item) => total + item.file.size, 0),
     )}`;
+    updateQueueActions(items);
+    updateTotalProgress(items);
+}
+
+function updateQueueActions(items) {
+    const isUploading = currentRun !== null;
+    const retryDelaySeconds = getBusyRetryDelaySeconds();
     elements.clearButton.textContent = isUploading ? "Отменить всё" : "Очистить";
     elements.clearButton.classList.toggle("text-button--danger", isUploading);
     elements.clearButton.ariaLabel = isUploading
         ? "Отменить загрузку всех файлов"
         : "Очистить список файлов";
-    elements.uploadButton.disabled = isUploading || queue.actionableItems.length === 0;
-    elements.uploadButton.querySelector("span").textContent = isUploading
-        ? "Загрузка…"
-        : items.some((item) => item.status === "error" || item.status === "canceled")
-            ? "Повторить"
-            : "Загрузить";
-    updateTotalProgress(items);
+    elements.uploadButton.disabled = isUploading
+        || retryDelaySeconds > 0
+        || queue.actionableItems.length === 0;
+    let uploadButtonText = "Загрузить";
+    if (isUploading) {
+        uploadButtonText = "Загрузка…";
+    } else if (retryDelaySeconds > 0) {
+        uploadButtonText = `Повторить через ${retryDelaySeconds} с`;
+    } else if (items.some((item) => item.status === "error" || item.status === "canceled")) {
+        uploadButtonText = "Повторить";
+    }
+    elements.uploadButton.querySelector("span").textContent = uploadButtonText;
 }
 
 function updateTotalProgress(items) {
@@ -124,7 +137,7 @@ function updateTotalProgress(items) {
 }
 
 async function startUpload() {
-    if (currentRun) return;
+    if (currentRun || getBusyRetryDelaySeconds() > 0) return;
     const items = [...queue.actionableItems];
     if (!items.length) return;
 
@@ -135,6 +148,7 @@ async function startUpload() {
         succeededIds: new Set(),
         failedIds: new Set(),
         active: null,
+        busyError: null,
     };
     currentRun = run;
     render(queue.items);
@@ -174,6 +188,15 @@ async function startUpload() {
             if (error instanceof UploadCancelledError || run.cancelledIds.has(item.id)) {
                 run.cancelledIds.add(item.id);
                 queue.cancel(item.id);
+            } else if (error instanceof ServerBusyError) {
+                queue.update(item.id, {
+                    status: "error",
+                    progress: 0,
+                    loaded: 0,
+                    speed: 0,
+                    message: error.message,
+                });
+                run.busyError = error;
             } else {
                 queue.update(item.id, {
                     status: "error",
@@ -186,6 +209,7 @@ async function startUpload() {
             run.completedIds.add(item.id);
             run.active = null;
         }
+        if (run.busyError) break;
     }
 
     currentRun = null;
@@ -229,7 +253,20 @@ function showUploadResult(run, total) {
     const failed = run.failedIds.size;
     const cancelled = run.cancelledIds.size;
 
-    if (cancelled > 0) {
+    if (run.busyError) {
+        startBusyRetryCooldown(run.busyError.retryAfterSeconds);
+        const retryHint = run.busyError.retryAfterSeconds
+            ? ` Повторите не раньше чем через ${run.busyError.retryAfterSeconds} сек.`
+            : "";
+        const resultParts = [];
+        if (succeeded > 0) resultParts.push(`загружено: ${succeeded}`);
+        if (failed > 0) resultParts.push(`с ошибкой: ${failed}`);
+        if (cancelled > 0) resultParts.push(`отменено: ${cancelled}`);
+        const completedHint = resultParts.length > 0
+            ? ` До этого ${resultParts.join(", ")}.`
+            : "";
+        notifications.show(`${run.busyError.message}${retryHint}${completedHint}`, "error");
+    } else if (cancelled > 0) {
         if (succeeded === 0 && failed === 0) {
             notifications.show(`${pluralizeFiles(cancelled)} отменено.`);
             return;
@@ -244,4 +281,22 @@ function showUploadResult(run, total) {
     } else {
         notifications.show("Не удалось загрузить файлы. Проверьте соединение.", "error");
     }
+}
+
+function startBusyRetryCooldown(seconds) {
+    if (!seconds) return;
+    busyRetryAllowedAt = Date.now() + seconds * 1000;
+    if (busyRetryTimer !== null) window.clearInterval(busyRetryTimer);
+    updateQueueActions(queue.items);
+    busyRetryTimer = window.setInterval(() => {
+        updateQueueActions(queue.items);
+        if (getBusyRetryDelaySeconds() > 0) return;
+        window.clearInterval(busyRetryTimer);
+        busyRetryTimer = null;
+        busyRetryAllowedAt = 0;
+    }, 1000);
+}
+
+function getBusyRetryDelaySeconds() {
+    return Math.max(0, Math.ceil((busyRetryAllowedAt - Date.now()) / 1000));
 }

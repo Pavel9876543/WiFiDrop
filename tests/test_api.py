@@ -1,10 +1,15 @@
+import asyncio
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies import get_upload_manager
 from app.config.settings import Settings
+from app.domain.files import FileCategory, StoredFile
 from app.main import create_app
 from app.services.file_classifier import FileClassifier
 from app.services.upload_manager import UploadManager
@@ -49,8 +54,9 @@ def test_captive_home_shows_open_in_browser_action(tmp_path: Path) -> None:
 
     assert captive_page.status_code == 200
     assert 'id="open-browser-button"' in captive_page.text
-    assert 'rel="external noopener noreferrer"' in captive_page.text
-    assert 'id="android-browser-chooser"' in captive_page.text
+    assert 'id="browser-picker"' in captive_page.text
+    assert 'data-browser-target="chrome"' in captive_page.text
+    assert 'data-browser-target="firefox"' in captive_page.text
     assert 'id="copy-browser-url"' in captive_page.text
     assert 'aria-label="Загрузка файлов" hidden' in captive_page.text
     assert 'id="open-browser-button"' not in normal_page.text
@@ -137,3 +143,110 @@ def test_captive_portal_api_reports_portal_url(tmp_path: Path, monkeypatch) -> N
         "captive": True,
         "user-portal-url": "http://192.168.4.1:8000/?captive=1",
     }
+
+
+@pytest.mark.asyncio
+async def test_concurrent_upload_is_rejected_while_other_routes_stay_available() -> None:
+    class BlockingUploadManager:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.calls = 0
+
+        async def store(self, upload: object, client_ip: str) -> StoredFile:
+            del upload, client_ip
+            self.calls += 1
+            self.started.set()
+            await self.release.wait()
+            return StoredFile(
+                original_name="first.txt",
+                saved_name="first.txt",
+                category=FileCategory.DOCUMENTS,
+                size=5,
+                relative_path=Path("Documents/2026-07-27/first.txt"),
+            )
+
+    application = create_app()
+    manager = BlockingUploadManager()
+    application.dependency_overrides[get_upload_manager] = lambda: manager
+    transport = ASGITransport(app=application)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        first_upload = asyncio.create_task(
+            client.post(
+                "/api/uploads",
+                files={"file": ("first.txt", b"first", "text/plain")},
+            )
+        )
+        await asyncio.wait_for(manager.started.wait(), timeout=1)
+        try:
+            busy_response = await client.post(
+                "/api/uploads",
+                files={"file": ("second.txt", b"second", "text/plain")},
+            )
+            health_response = await client.get("/api/health")
+        finally:
+            manager.release.set()
+        first_response = await first_upload
+
+    assert first_response.status_code == 201
+    assert busy_response.status_code == 503
+    assert busy_response.headers["retry-after"].isdigit()
+    assert busy_response.json() == {
+        "success": False,
+        "error": "server_busy",
+        "message": (
+            "Сервер занят другой загрузкой. Подождите немного "
+            "и повторите отправку позже."
+        ),
+    }
+    assert health_response.status_code == 200
+    assert manager.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelled_request_releases_upload_slot() -> None:
+    class CancelOnceUploadManager:
+        def __init__(self) -> None:
+            self.first_started = asyncio.Event()
+            self.never_release_first = asyncio.Event()
+            self.calls = 0
+
+        async def store(self, upload: object, client_ip: str) -> StoredFile:
+            del upload, client_ip
+            self.calls += 1
+            if self.calls == 1:
+                self.first_started.set()
+                await self.never_release_first.wait()
+            return StoredFile(
+                original_name="saved.txt",
+                saved_name="saved.txt",
+                category=FileCategory.DOCUMENTS,
+                size=5,
+                relative_path=Path("Documents/2026-07-27/saved.txt"),
+            )
+
+    application = create_app()
+    manager = CancelOnceUploadManager()
+    application.dependency_overrides[get_upload_manager] = lambda: manager
+    transport = ASGITransport(app=application)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        cancelled_upload = asyncio.create_task(
+            client.post(
+                "/api/uploads",
+                files={"file": ("cancelled.txt", b"first", "text/plain")},
+            )
+        )
+        await asyncio.wait_for(manager.first_started.wait(), timeout=1)
+        cancelled_upload.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_upload
+
+        next_response = await client.post(
+            "/api/uploads",
+            files={"file": ("saved.txt", b"saved", "text/plain")},
+        )
+
+    assert next_response.status_code == 201
+    assert manager.calls == 2

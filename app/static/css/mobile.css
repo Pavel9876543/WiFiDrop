@@ -177,3 +177,10 @@
         width: 100%;
     }
 }
+
+
+@media (max-width: 560px) {
+    .browser-picker { padding: 12px; }
+    .browser-picker__panel { padding: 18px; border-radius: 20px; }
+    .browser-picker__grid { grid-template-columns: 1fr; }
+}

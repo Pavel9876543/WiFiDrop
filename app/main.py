@@ -10,6 +10,7 @@ from app.api.router import router
 from app.config.settings import PROJECT_ROOT, get_settings
 from app.core.logging import configure_logging
 from app.services.upload_cleanup import remove_orphaned_uploads
+from app.services.upload_gate import UploadCapacityMiddleware
 
 settings = get_settings()
 
@@ -40,6 +41,11 @@ def create_app() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         lifespan=lifespan,
+    )
+    application.add_middleware(
+        UploadCapacityMiddleware,
+        max_concurrent_uploads=settings.max_concurrent_uploads,
+        retry_after_seconds=settings.upload_busy_retry_after_seconds,
     )
     register_exception_handlers(application)
     application.include_router(router)
