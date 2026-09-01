@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     log_dir: Path = Path("logs")
     log_retention_days: int = Field(default=30, ge=1)
     upload_chunk_size_kb: int = Field(default=1024, ge=64, le=16384)
+    captive_portal_enabled: bool = False
+    captive_portal_port: int = Field(default=80, ge=1, le=65535)
+    captive_portal_public_url: str | None = None
+    hotspot_enabled: bool = False
+    hotspot_ssid: str = "WiFiDrop"
+    hotspot_password: str = "WiFiDrop2026"
+    hotspot_gateway_ip: str = "192.168.50.1"
 
     @field_validator("log_level")
     @classmethod
@@ -35,6 +42,41 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             msg = f"LOG_LEVEL must be one of: {', '.join(sorted(allowed))}"
             raise ValueError(msg)
+        return normalized
+
+    @field_validator("hotspot_ssid")
+    @classmethod
+    def validate_hotspot_ssid(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or len(normalized.encode("utf-8")) > 32:
+            raise ValueError("HOTSPOT_SSID must be 1-32 bytes")
+        return normalized
+
+    @field_validator("hotspot_password")
+    @classmethod
+    def validate_hotspot_password(cls, value: str) -> str:
+        if not 8 <= len(value) <= 63:
+            raise ValueError("HOTSPOT_PASSWORD must contain 8-63 characters")
+        return value
+
+    @field_validator("hotspot_gateway_ip")
+    @classmethod
+    def validate_hotspot_gateway_ip(cls, value: str) -> str:
+        import ipaddress
+
+        address = ipaddress.ip_address(value.strip())
+        if address.version != 4 or not address.is_private:
+            raise ValueError("HOTSPOT_GATEWAY_IP must be a private IPv4 address")
+        return str(address)
+
+    @field_validator("captive_portal_public_url")
+    @classmethod
+    def validate_captive_portal_public_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip()
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("CAPTIVE_PORTAL_PUBLIC_URL must start with http:// or https://")
         return normalized
 
     @field_validator("max_file_size_mb", mode="before")

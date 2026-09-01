@@ -1,0 +1,10 @@
+# WiFiDrop captive-portal DNS overrides for a network controlled by this server.
+# Replace 192.168.4.1 with the LAN/hotspot IPv4 address of the WiFiDrop server.
+# Include this file from dnsmasq ONLY on the dedicated WiFiDrop hotspot/LAN.
+
+address=/connectivitycheck.gstatic.com/192.168.4.1
+address=/clients3.google.com/192.168.4.1
+address=/captive.apple.com/192.168.4.1
+address=/www.msftconnecttest.com/192.168.4.1
+address=/msftconnecttest.com/192.168.4.1
+address=/www.msftncsi.com/192.168.4.1

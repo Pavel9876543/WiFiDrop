@@ -14,3 +14,20 @@ def test_local_addresses_exclude_loopback(monkeypatch) -> None:
     )
 
     assert get_local_ipv4_addresses() == ["192.168.1.42"]
+
+
+def test_preferred_local_address_uses_route(monkeypatch) -> None:
+    from app.utils.network import get_preferred_local_ipv4_address
+
+    class FakeSocket:
+        def connect(self, _address):
+            return None
+
+        def getsockname(self):
+            return ("192.168.50.7", 12345)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(socket, "socket", lambda *_args, **_kwargs: FakeSocket())
+    assert get_preferred_local_ipv4_address() == "192.168.50.7"

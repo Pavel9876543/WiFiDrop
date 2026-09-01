@@ -86,3 +86,37 @@ def test_oversized_upload_returns_413(tmp_path: Path) -> None:
 
     assert response.status_code == 413
     assert response.json()["error"] == "file_too_large"
+
+
+def test_captive_portal_probe_redirects_to_wifidrop(tmp_path: Path, monkeypatch) -> None:
+    portal_settings = Settings(_env_file=None, port=8000)
+    monkeypatch.setattr("app.api.routes.captive_portal.get_settings", lambda: portal_settings)
+    monkeypatch.setattr(
+        "app.api.routes.captive_portal.get_preferred_local_ipv4_address",
+        lambda: "192.168.1.42",
+    )
+
+    with create_test_client(tmp_path) as client:
+        response = client.get("/generate_204", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://192.168.1.42:8000/"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_captive_portal_api_reports_portal_url(tmp_path: Path, monkeypatch) -> None:
+    portal_settings = Settings(
+        _env_file=None,
+        port=8000,
+        captive_portal_public_url="http://192.168.4.1:8000",
+    )
+    monkeypatch.setattr("app.api.routes.captive_portal.get_settings", lambda: portal_settings)
+
+    with create_test_client(tmp_path) as client:
+        response = client.get("/.well-known/captive-portal")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "captive": True,
+        "user-portal-url": "http://192.168.4.1:8000/",
+    }
