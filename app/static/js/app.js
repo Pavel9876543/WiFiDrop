@@ -1,15 +1,16 @@
-import { initializeBrowserLaunch } from "./browser-launch.js";
-import { checkConnection } from "./connection.js";
-import { initializeDropZone } from "./drop-zone.js";
-import { FileListView } from "./file-list.js";
-import { Notifications } from "./notifications.js";
-import { initializePwa } from "./pwa.js";
-import { UploadQueue } from "./queue-state.js";
-import { initializeTheme } from "./theme.js";
-import { ServerBusyError, UploadCancelledError, uploadFile } from "./uploader.js";
-import { formatBytes, pluralizeFiles } from "./utils.js";
+import { initializeBrowserLaunch } from "./browser-launch.js?v=14";
+import { checkConnection } from "./connection.js?v=14";
+import { initializeDropZone } from "./drop-zone.js?v=14";
+import { FileListView } from "./file-list.js?v=14";
+import { Notifications } from "./notifications.js?v=14";
+import { initializePwa } from "./pwa.js?v=14";
+import { UploadQueue } from "./queue-state.js?v=14";
+import { initializeTheme } from "./theme.js?v=14";
+import { ServerBusyError, UploadCancelledError, uploadFile } from "./uploader.js?v=14";
+import { formatBytes, pluralizeFiles } from "./utils.js?v=14";
 
 const elements = {
+    browseButton: document.querySelector("#browse-button"),
     openBrowserButton: document.querySelector("#open-browser-button"),
     androidBrowserChooser: document.querySelector("#android-browser-chooser"),
     copyBrowserUrl: document.querySelector("#copy-browser-url"),
@@ -52,6 +53,7 @@ initializePwa(elements.installButton, (message) => notifications.show(message, "
 initializeDropZone(
     elements.dropZone,
     elements.fileInput,
+    elements.browseButton,
     addFiles,
 );
 elements.clearButton.addEventListener("click", () => {

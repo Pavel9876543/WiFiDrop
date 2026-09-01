@@ -38,9 +38,9 @@ def test_home_page_and_health(tmp_path: Path) -> None:
     assert "WiFiDrop" in page.text
     assert 'rel="manifest"' in page.text
     assert 'id="install-app-button"' in page.text
-    assert 'class="file-input-accessible" id="file-input" type="file" multiple' in page.text
-    assert 'id="drop-zone" for="file-input"' in page.text
-    assert 'id="browse-button"' not in page.text
+    assert 'class="file-input-accessible" id="file-input" type="file" multiple hidden' in page.text
+    assert 'id="drop-zone"' in page.text
+    assert 'id="browse-button" for="file-input"' in page.text
     assert 'file-input-accessible' in page.text
     assert health.json() == {"status": "ok"}
     assert service_worker.status_code == 200
@@ -61,8 +61,8 @@ def test_captive_home_shows_open_in_browser_action(tmp_path: Path) -> None:
     assert 'id="copy-browser-url"' in captive_page.text
     assert 'aria-label="Загрузка файлов"' in captive_page.text
     assert 'aria-label="Загрузка файлов" hidden' not in captive_page.text
-    assert 'id="drop-zone" for="file-input"' in captive_page.text
-    assert 'id="browse-button"' not in captive_page.text
+    assert 'id="drop-zone"' in captive_page.text
+    assert 'id="browse-button" for="file-input"' in captive_page.text
     assert 'id="queue" hidden' in captive_page.text
     assert 'id="open-browser-button"' not in normal_page.text
 
