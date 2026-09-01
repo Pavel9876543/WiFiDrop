@@ -44,7 +44,7 @@ WiFiDrop — локальное веб-приложение для переда�
 
 ## Быстрый запуск на Windows
 
-Откройте PowerShell или Command Prompt в папке проекта и выполните:
+Откройте Command Prompt (cmd) в папке проекта и выполните:
 
 ```bat
 run.bat
@@ -168,8 +168,8 @@ IP нужен HTTPS с сертификатом, которому доверяе
 
 Самый удобный вариант из папки проекта:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\get_ip.ps1
+```cmd
+ipconfig
 ```
 
 Скрипт также читает порт из `.env` и выводит готовые ссылки.

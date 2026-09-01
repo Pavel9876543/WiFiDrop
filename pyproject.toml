@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.11,<2.13",
     "pydantic-settings>=2.10,<2.14",
     "python-multipart>=0.0.20,<1",
+    "psutil>=6.0,<8",
     "starlette>=0.40,<0.53",
     "uvicorn>=0.35,<1",
     "PyQt6>=6.7,<7",

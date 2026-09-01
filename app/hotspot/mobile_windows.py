@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
+import os
 import socket
-import subprocess
 from dataclasses import dataclass
+
+import psutil
 
 
 @dataclass(frozen=True)
@@ -11,23 +12,6 @@ class MobileHotspotInfo:
     adapter_name: str
     description: str
     ipv4: str
-
-
-def _run_powershell(script: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    # Windows PowerShell 5.1 may use an OEM code page when stdout is redirected.
-    # Force UTF-8 before emitting JSON so Cyrillic adapter names survive intact.
-    utf8_prefix = (
-        "$enc = New-Object System.Text.UTF8Encoding($false); "
-        "[Console]::OutputEncoding = $enc; $OutputEncoding = $enc; "
-    )
-    return subprocess.run(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", utf8_prefix + script],
-        text=True,
-        capture_output=True,
-        check=check,
-        encoding="utf-8",
-        errors="replace",
-    )
 
 
 def _is_private_ipv4(value: str) -> bool:
@@ -39,54 +23,56 @@ def _is_private_ipv4(value: str) -> bool:
     return first == 10 or (first == 172 and 16 <= second <= 31) or (first == 192 and second == 168)
 
 
-def detect_mobile_hotspot() -> MobileHotspotInfo | None:
-    """Detect the private adapter created by Windows Mobile Hotspot.
+def _candidate_score(name: str, ipv4: str) -> tuple[int, int, str]:
+    """Rank interfaces that are likely to be Windows Mobile Hotspot adapters."""
+    lowered = name.casefold()
+    score = 100
+    if ipv4.startswith("192.168.137."):
+        score -= 80
+    if ipv4.endswith(".1"):
+        score -= 10
+    if any(token in lowered for token in ("local area connection*", "подключение по локальной сети*", "wi-fi direct", "mobile hotspot")):
+        score -= 20
+    if any(token in lowered for token in ("ethernet", "realtek", "tap", "vpn", "loopback")):
+        score += 40
+    return (score, len(name), name.casefold())
 
-    Windows normally exposes it as a Microsoft Wi-Fi Direct Virtual Adapter.
-    The address is intentionally discovered instead of assuming 192.168.137.1.
+
+def detect_mobile_hotspot() -> MobileHotspotInfo | None:
+    """Detect the private adapter used by Windows Mobile Hotspot.
+
+    This intentionally uses psutil/Windows networking APIs directly. It avoids
+    flashing console windows and preserves Unicode adapter
+    names without parsing localized command output.
     """
-    script = r'''
-$items = Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue |
-    Where-Object { $_.Status -eq 'Up' -and ($_.InterfaceDescription -match 'Wi-Fi Direct|Mobile Hotspot') } |
-    ForEach-Object {
-        $a = $_
-        Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notlike '169.254.*' } |
-            ForEach-Object {
-                [PSCustomObject]@{ Name=$a.Name; Description=$a.InterfaceDescription; IPv4=$_.IPAddress }
-            }
-    }
-$items | ConvertTo-Json -Compress
-'''
-    try:
-        result = _run_powershell(script, check=False)
-    except FileNotFoundError:
+    if os.name != "nt":
         return None
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    try:
-        data = json.loads(result.stdout.strip())
-    except json.JSONDecodeError:
-        return None
-    if isinstance(data, dict):
-        data = [data]
-    candidates = [item for item in data if isinstance(item, dict) and _is_private_ipv4(str(item.get("IPv4", "")))]
+
+    stats = psutil.net_if_stats()
+    candidates: list[MobileHotspotInfo] = []
+    for name, addresses in psutil.net_if_addrs().items():
+        stat = stats.get(name)
+        if stat is not None and not stat.isup:
+            continue
+        for address in addresses:
+            if address.family != socket.AF_INET:
+                continue
+            ipv4 = address.address
+            if not _is_private_ipv4(ipv4) or ipv4.startswith("169.254."):
+                continue
+            candidates.append(MobileHotspotInfo(name, name, ipv4))
+
     if not candidates:
         return None
-    # Prefer the conventional ICS subnet when several Wi-Fi Direct interfaces exist.
-    candidates.sort(key=lambda item: 0 if str(item.get("IPv4", "")).startswith("192.168.137.") else 1)
-    item = candidates[0]
-    return MobileHotspotInfo(
-        adapter_name=str(item.get("Name", "")),
-        description=str(item.get("Description", "")),
-        ipv4=str(item.get("IPv4", "")),
-    )
+    candidates.sort(key=lambda item: _candidate_score(item.adapter_name, item.ipv4))
+    best = candidates[0]
+    # Avoid treating an ordinary LAN adapter as a hotspot unless it has a
+    # gateway-like address or the conventional Windows ICS subnet.
+    if not (best.ipv4.startswith("192.168.137.") or best.ipv4.endswith(".1")):
+        return None
+    return best
 
 
 def open_mobile_hotspot_settings() -> None:
-    # Launch and return immediately so opening Settings can never block the Qt UI.
-    subprocess.Popen(
-        ["cmd.exe", "/c", "start", "", "ms-settings:network-mobilehotspot"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    if os.name == "nt":
+        os.startfile("ms-settings:network-mobilehotspot")  # type: ignore[attr-defined]

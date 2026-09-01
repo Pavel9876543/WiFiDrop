@@ -6,7 +6,7 @@ cd /d "%~dp0"
 net session >nul 2>&1
 if not %errorlevel%==0 (
     echo [WiFiDrop] Administrator privileges are required. Requesting elevation...
-    powershell.exe -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    wscript.exe //nologo "%~dp0WiFiDrop.vbs" elevate "%~f0"
     exit /b
 )
 

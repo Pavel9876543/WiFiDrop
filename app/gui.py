@@ -43,7 +43,7 @@ from app.config.env_file import update_env_file
 from app.config.settings import PROJECT_ROOT, Settings, get_settings
 from app.hotspot.dns import CaptiveDnsServer
 from app.hotspot.mobile_windows import detect_mobile_hotspot, open_mobile_hotspot_settings
-from app.hotspot.windows import ensure_firewall_rules, is_windows_admin
+from app.hotspot.windows import ensure_firewall_rules_with_elevation
 
 
 class WorkerSignals(QObject):
@@ -416,14 +416,15 @@ class WiFiDropWindow(QMainWindow):
                 return StartPreflight(None, True, False, None)
 
             firewall_message: str | None = None
-            if os.name == "nt" and is_windows_admin():
-                ensure_firewall_rules(self.settings.port)
-                firewall_message = "[GUI] Правила Windows Firewall для WiFiDrop проверены."
-            elif os.name == "nt":
-                firewall_message = (
-                    "[GUI] ПРЕДУПРЕЖДЕНИЕ: GUI запущен без прав администратора; "
-                    "Windows Firewall может блокировать телефон."
-                )
+            if os.name == "nt":
+                if ensure_firewall_rules_with_elevation(self.settings.port):
+                    firewall_message = "[GUI] Правила Windows Firewall для WiFiDrop готовы."
+                else:
+                    firewall_message = (
+                        "[GUI] ПРЕДУПРЕЖДЕНИЕ: правила Windows Firewall не удалось подготовить. "
+                        "Если Windows запросила права администратора и запрос был отменён, "
+                        "телефон может не получить доступ к WiFiDrop."
+                    )
 
             return StartPreflight(
                 info=info,
