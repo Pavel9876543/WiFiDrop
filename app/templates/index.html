@@ -77,36 +77,16 @@
                     <p id="browser-launch-description">Нажмите кнопку ниже. Android или iPhone передаст ссылку установленному браузеру, если системное окно это разрешает.</p>
                 </div>
                 <div class="browser-launch__actions">
-                    <button class="button button--primary browser-launch__button" id="open-browser-button" type="button" data-url="{{ browser_url }}">
+                    <a class="button button--primary browser-launch__button" id="open-browser-button" href="{{ browser_url }}" rel="external noopener noreferrer">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
-                        <span id="open-browser-label">Выбрать браузер</span>
-                    </button>
+                        <span id="open-browser-label">Открыть в браузере</span>
+                    </a>
+                    <button class="button button--secondary" id="android-browser-chooser" type="button" hidden>Выбрать браузер</button>
                     <button class="button button--secondary" id="copy-browser-url" type="button" data-url="{{ browser_url }}">Скопировать адрес</button>
                 </div>
-                <p class="browser-launch__hint" id="browser-launch-hint">WiFiDrop не открывает браузер по умолчанию автоматически. Сначала выберите браузер.</p>
+                <p class="browser-launch__hint" id="browser-launch-hint">Если ОС не выпустит ссылку из окна авторизации, скопируйте адрес и вставьте его в любой браузер.</p>
             </div>
         </section>
-        <div class="browser-picker" id="browser-picker" hidden role="dialog" aria-modal="true" aria-labelledby="browser-picker-title">
-            <div class="browser-picker__panel">
-                <div class="browser-picker__header">
-                    <div>
-                        <span class="browser-launch__eyebrow">Открыть WiFiDrop</span>
-                        <h2 id="browser-picker-title">Выберите браузер</h2>
-                    </div>
-                    <button class="icon-button" id="browser-picker-close" type="button" aria-label="Закрыть выбор браузера">×</button>
-                </div>
-                <p class="browser-picker__description">WiFiDrop не использует браузер по умолчанию автоматически. Нажмите браузер, который хотите открыть.</p>
-                <div class="browser-picker__grid">
-                    <button class="button button--secondary" type="button" data-browser-target="chrome" data-platforms="android,ios">Chrome</button>
-                    <button class="button button--secondary" type="button" data-browser-target="firefox" data-platforms="android,ios">Firefox</button>
-                    <button class="button button--secondary" type="button" data-browser-target="yandex" data-platforms="android">Яндекс Браузер</button>
-                    <button class="button button--secondary" type="button" data-browser-target="edge" data-platforms="android">Microsoft Edge</button>
-                    <button class="button button--secondary" type="button" data-browser-target="brave" data-platforms="android">Brave</button>
-                    <button class="button button--secondary" type="button" data-browser-target="opera" data-platforms="android">Opera</button>
-                </div>
-                <p class="browser-picker__note">Если нужного браузера нет в списке или система блокирует его запуск, скопируйте адрес и откройте браузер вручную.</p>
-            </div>
-        </div>
         {% else %}
         <section class="hero" aria-labelledby="hero-title">
             <div class="eyebrow"><span></span> Передача без интернета</div>

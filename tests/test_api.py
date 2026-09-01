@@ -54,9 +54,8 @@ def test_captive_home_shows_open_in_browser_action(tmp_path: Path) -> None:
 
     assert captive_page.status_code == 200
     assert 'id="open-browser-button"' in captive_page.text
-    assert 'id="browser-picker"' in captive_page.text
-    assert 'data-browser-target="chrome"' in captive_page.text
-    assert 'data-browser-target="firefox"' in captive_page.text
+    assert 'rel="external noopener noreferrer"' in captive_page.text
+    assert 'id="android-browser-chooser"' in captive_page.text
     assert 'id="copy-browser-url"' in captive_page.text
     assert 'aria-label="Загрузка файлов" hidden' in captive_page.text
     assert 'id="open-browser-button"' not in normal_page.text
