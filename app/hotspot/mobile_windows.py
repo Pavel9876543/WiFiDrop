@@ -14,8 +14,14 @@ class MobileHotspotInfo:
 
 
 def _run_powershell(script: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    # Windows PowerShell 5.1 may use an OEM code page when stdout is redirected.
+    # Force UTF-8 before emitting JSON so Cyrillic adapter names survive intact.
+    utf8_prefix = (
+        "$enc = New-Object System.Text.UTF8Encoding($false); "
+        "[Console]::OutputEncoding = $enc; $OutputEncoding = $enc; "
+    )
     return subprocess.run(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", utf8_prefix + script],
         text=True,
         capture_output=True,
         check=check,
