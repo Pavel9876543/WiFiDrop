@@ -1,3 +1,4 @@
+import { initializeBrowserLaunch } from "./browser-launch.js";
 import { checkConnection } from "./connection.js";
 import { initializeDropZone } from "./drop-zone.js";
 import { FileListView } from "./file-list.js";
@@ -10,6 +11,8 @@ import { formatBytes, pluralizeFiles } from "./utils.js";
 
 const elements = {
     browseButton: document.querySelector("#browse-button"),
+    copyBrowserUrl: document.querySelector("#copy-browser-url"),
+    browserLaunchHint: document.querySelector("#browser-launch-hint"),
     clearButton: document.querySelector("#clear-button"),
     connection: document.querySelector("#connection-status"),
     dropZone: document.querySelector("#drop-zone"),
@@ -30,6 +33,11 @@ const maxFileSizeMb = Number(document.body.dataset.maxFileSizeMb);
 const hasFileSizeLimit = Number.isFinite(maxFileSizeMb) && maxFileSizeMb > 0;
 const maxFileSizeBytes = hasFileSizeLimit ? maxFileSizeMb * 1024 * 1024 : null;
 const notifications = new Notifications(elements.toastRegion);
+initializeBrowserLaunch(
+    elements.copyBrowserUrl,
+    elements.browserLaunchHint,
+    (message, type) => notifications.show(message, type),
+);
 let pendingRenderItems = null;
 let renderFrame = null;
 const scheduleRender = (items) => {

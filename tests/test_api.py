@@ -42,6 +42,20 @@ def test_home_page_and_health(tmp_path: Path) -> None:
     assert "wifidrop-shell" in service_worker.text
 
 
+
+def test_captive_home_shows_open_in_browser_action(tmp_path: Path) -> None:
+    with create_test_client(tmp_path) as client:
+        captive_page = client.get("/?captive=1")
+        normal_page = client.get("/")
+
+    assert captive_page.status_code == 200
+    assert 'id="open-browser-button"' in captive_page.text
+    assert 'target="_blank"' in captive_page.text
+    assert 'rel="external noopener noreferrer"' in captive_page.text
+    assert 'id="copy-browser-url"' in captive_page.text
+    assert 'id="open-browser-button"' not in normal_page.text
+
+
 def test_upload_endpoint(tmp_path: Path) -> None:
     with create_test_client(tmp_path) as client:
         response = client.post(
@@ -103,7 +117,7 @@ def test_captive_portal_probe_redirects_to_wifidrop(tmp_path: Path, monkeypatch)
         response = client.get("/generate_204", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["location"] == "http://192.168.1.42:8000/"
+    assert response.headers["location"] == "http://192.168.1.42:8000/?captive=1"
     assert response.headers["cache-control"] == "no-store"
 
 
@@ -121,5 +135,5 @@ def test_captive_portal_api_reports_portal_url(tmp_path: Path, monkeypatch) -> N
     assert response.status_code == 200
     assert response.json() == {
         "captive": True,
-        "user-portal-url": "http://192.168.4.1:8000/",
+        "user-portal-url": "http://192.168.4.1:8000/?captive=1",
     }

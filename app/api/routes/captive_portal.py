@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -25,8 +27,21 @@ def _portal_url(request: Request) -> str:
     return f"http://{hostname}:{settings.port}/"
 
 
+def _captive_entry_url(request: Request) -> str:
+    """Return the WiFiDrop URL marked as opened from a captive-portal flow."""
+    target = _portal_url(request)
+    parts = urlsplit(target)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["captive"] = "1"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), parts.fragment))
+
+
 def _portal_redirect(request: Request) -> RedirectResponse:
-    return RedirectResponse(_portal_url(request), status_code=302, headers={"Cache-Control": "no-store"})
+    return RedirectResponse(
+        _captive_entry_url(request),
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # Android / ChromeOS connectivity probes. A normal unrestricted network returns 204;
@@ -68,7 +83,7 @@ async def captive_portal_api(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "captive": True,
-            "user-portal-url": _portal_url(request),
+            "user-portal-url": _captive_entry_url(request),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -76,7 +91,7 @@ async def captive_portal_api(request: Request) -> JSONResponse:
 
 @router.get("/captive-portal")
 async def captive_portal_landing(request: Request) -> HTMLResponse:
-    target = _portal_url(request)
+    target = _captive_entry_url(request)
     safe_target = target.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
     return HTMLResponse(
         "<!doctype html><html lang='ru'><head><meta charset='utf-8'>"
