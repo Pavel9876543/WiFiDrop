@@ -40,10 +40,25 @@ export function initializePwa(installButton, showMessage) {
 
 function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/service-worker.js").catch(() => {
+
+    let reloadingForUpdate = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (reloadingForUpdate) return;
+        if (window.sessionStorage.getItem("wifidrop-sw-reloaded") === "1") return;
+        reloadingForUpdate = true;
+        window.sessionStorage.setItem("wifidrop-sw-reloaded", "1");
+        window.location.reload();
+    });
+
+    window.addEventListener("load", async () => {
+        try {
+            const registration = await navigator.serviceWorker.register("/service-worker.js", {
+                updateViaCache: "none",
+            });
+            await registration.update();
+        } catch {
             // File transfer remains available when PWA installation is unsupported.
-        });
+        }
     });
 }
 

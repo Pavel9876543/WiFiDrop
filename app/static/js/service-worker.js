@@ -1,4 +1,4 @@
-const CACHE_NAME = "wifidrop-shell-v10";
+const CACHE_NAME = "wifidrop-shell-v11";
 const APP_SHELL = [
     "/",
     "/static/manifest.webmanifest",
@@ -55,7 +55,7 @@ self.addEventListener("fetch", (event) => {
     }
 
     if (url.pathname.startsWith("/static/")) {
-        event.respondWith(cacheFirst(request));
+        event.respondWith(networkFirst(request));
     }
 });
 

@@ -100,7 +100,7 @@
                     <h2>Перетащите файлы сюда</h2>
                     <p>или нажмите, чтобы выбрать с устройства</p>
                 </div>
-                <button class="button button--secondary" id="browse-button" type="button">Выбрать файлы</button>
+                <label class="button button--secondary" id="browse-button" for="file-input" role="button" tabindex="0">Выбрать файлы</label>
                 <div class="drop-zone__meta">
                     <span>Любые форматы</span><i></i>
                     <span>
@@ -164,6 +164,6 @@
     </footer>
     <div class="toast-region" id="toast-region" aria-live="assertive"></div>
 
-    <script type="module" src="{{ url_for('static', path='/js/app.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='/js/app.js') }}?v=12"></script>
 </body>
 </html>

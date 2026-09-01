@@ -1,8 +1,5 @@
 export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
     const openPicker = () => {
-        // Chrome требует открывать окно выбора непосредственно из пользовательского
-        // клика/касания. Сначала используем стандартный showPicker(), а click()
-        // оставляем как совместимый fallback для остальных браузеров.
         if (typeof fileInput.showPicker === "function") {
             try {
                 fileInput.showPicker();
@@ -16,12 +13,18 @@ export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
         fileInput.click();
     };
 
+    // Кнопка выбора — нативный <label for="file-input">. Не перехватываем
+    // её click: браузер сам открывает системный выбор файлов. Это надёжнее
+    // программного click()/showPicker() в Chrome на Android.
+    browseButton.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openPicker();
+        }
+    });
+
     dropZone.addEventListener("click", (event) => {
         if (!browseButton.contains(event.target)) openPicker();
-    });
-    browseButton.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openPicker();
     });
     dropZone.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
