@@ -23,19 +23,24 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from app.config.settings import PROJECT_ROOT, get_settings
+from app.config.env_file import update_env_file
+from app.config.settings import PROJECT_ROOT, Settings, get_settings
 from app.hotspot.dns import CaptiveDnsServer
 from app.hotspot.mobile_windows import detect_mobile_hotspot, open_mobile_hotspot_settings
 from app.hotspot.windows import ensure_firewall_rules, is_windows_admin
@@ -91,7 +96,7 @@ class WiFiDropWindow(QMainWindow):
         self.process.errorOccurred.connect(self._process_error)
 
         self.setWindowTitle("WiFiDrop — сервер и мобильный хот-спот")
-        self.resize(900, 650)
+        self.resize(960, 840)
 
         root = QWidget(self)
         self.setCentralWidget(root)
@@ -122,13 +127,14 @@ class WiFiDropWindow(QMainWindow):
         self.stop_button = QPushButton("Остановить")
         self.open_button = QPushButton("Открыть сайт")
         self.settings_button = QPushButton("Настройки хот-спота Windows")
+        self.app_settings_button = QPushButton("Настройки WiFiDrop")
         self.stop_button.setEnabled(False)
         self.open_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_server)
         self.stop_button.clicked.connect(self.stop_server)
         self.open_button.clicked.connect(self.open_site)
         self.settings_button.clicked.connect(open_mobile_hotspot_settings)
-        for button in (self.start_button, self.stop_button, self.open_button, self.settings_button):
+        for button in (self.start_button, self.stop_button, self.open_button, self.settings_button, self.app_settings_button):
             buttons.addWidget(button)
         layout.addLayout(buttons)
 
@@ -139,6 +145,78 @@ class WiFiDropWindow(QMainWindow):
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
+
+        settings_box = QGroupBox("Настройки WiFiDrop (.env)")
+        settings_layout = QGridLayout(settings_box)
+        self.app_name_input = QLineEdit()
+        self.host_input = QLineEdit()
+        self.port_input = QSpinBox()
+        self.port_input.setRange(1, 65535)
+        self.upload_dir_input = QLineEdit()
+        self.max_file_size_input = QSpinBox()
+        self.max_file_size_input.setRange(0, 1_000_000)
+        self.max_file_size_input.setSpecialValueText("Без ограничения")
+        self.chunk_size_input = QSpinBox()
+        self.chunk_size_input.setRange(64, 16384)
+        self.chunk_size_input.setSuffix(" КБ")
+        self.log_level_input = QComboBox()
+        self.log_level_input.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+        self.log_level_input.setToolTip(
+            "DEBUG — максимально подробно; INFO — обычная работа; WARNING — предупреждения; "
+            "ERROR — только ошибки; CRITICAL — только критические ошибки."
+        )
+        self.log_dir_input = QLineEdit()
+        self.log_retention_input = QSpinBox()
+        self.log_retention_input.setRange(1, 3650)
+        self.log_retention_input.setSuffix(" дн.")
+        self.captive_enabled_input = QCheckBox("Включать Captive Portal при обычном запуске")
+        self.captive_port_input = QSpinBox()
+        self.captive_port_input.setRange(1, 65535)
+        self.captive_url_input = QLineEdit()
+        self.captive_url_input.setPlaceholderText("Автоматически определить адрес")
+        self.hotspot_enabled_input = QCheckBox("Включать автономный Hosted Network (run_hotspot.bat)")
+        self.hotspot_ssid_input = QLineEdit()
+        self.hotspot_password_input = QLineEdit()
+        self.hotspot_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.hotspot_gateway_input = QLineEdit()
+
+        settings_rows = [
+            ("Название приложения:", self.app_name_input, "Имя, которое отображается на веб-странице."),
+            ("Адрес прослушивания:", self.host_input, "Обычно 0.0.0.0 — принимать подключения со всех сетевых интерфейсов."),
+            ("Порт сайта:", self.port_input, "TCP-порт, по которому открывается WiFiDrop."),
+            ("Папка для файлов:", self.upload_dir_input, "Куда сохранять полученные файлы. Можно указать абсолютный путь."),
+            ("Макс. размер файла, МБ:", self.max_file_size_input, "0 означает без ограничения."),
+            ("Размер блока загрузки:", self.chunk_size_input, "Размер порции записи файла на диск. Обычно менять не требуется."),
+            ("Уровень логов:", self.log_level_input, "Подробность журнала. INFO подходит для обычного использования."),
+            ("Папка логов:", self.log_dir_input, "Куда сохранять журналы работы программы."),
+            ("Хранить логи:", self.log_retention_input, "Через сколько дней старые журналы удаляются."),
+            ("HTTP-порт Captive Portal:", self.captive_port_input, "Обычно 80 — стандартный порт системных проверок Wi-Fi."),
+            ("Публичный URL портала:", self.captive_url_input, "Можно оставить пустым для автоматического определения."),
+            ("SSID автономной точки:", self.hotspot_ssid_input, "Используется только старым автономным режимом run_hotspot.bat."),
+            ("Пароль автономной точки:", self.hotspot_password_input, "Используется только старым автономным режимом run_hotspot.bat; минимум 8 символов."),
+            ("IP автономной точки:", self.hotspot_gateway_input, "Шлюз автономной сети run_hotspot.bat, например 192.168.50.1."),
+        ]
+        for row, (label_text, widget, tooltip) in enumerate(settings_rows):
+            label = QLabel(label_text)
+            label.setToolTip(tooltip)
+            widget.setToolTip(tooltip)
+            settings_layout.addWidget(label, row, 0)
+            settings_layout.addWidget(widget, row, 1)
+        settings_layout.addWidget(self.captive_enabled_input, len(settings_rows), 0, 1, 2)
+        settings_layout.addWidget(self.hotspot_enabled_input, len(settings_rows) + 1, 0, 1, 2)
+        self.save_settings_button = QPushButton("Сохранить настройки")
+        self.save_settings_button.clicked.connect(self.save_settings)
+        settings_layout.addWidget(self.save_settings_button, len(settings_rows) + 2, 1)
+        settings_layout.setColumnStretch(1, 1)
+        settings_box.setVisible(False)
+        self.app_settings_button.clicked.connect(settings_box.setVisible)
+        self.app_settings_button.clicked.connect(
+            lambda visible: self.app_settings_button.setText(
+                "Скрыть настройки WiFiDrop" if visible else "Настройки WiFiDrop"
+            )
+        )
+        layout.addWidget(settings_box)
+        self._load_settings_into_form()
 
         log_box = QGroupBox("Журнал")
         log_layout = QVBoxLayout(log_box)
@@ -157,6 +235,83 @@ class WiFiDropWindow(QMainWindow):
         self.timer.timeout.connect(self.refresh_network_state)
         self.timer.start()
         QTimer.singleShot(0, self.refresh_network_state)
+
+    def _load_settings_into_form(self) -> None:
+        settings = self.settings
+        self.app_name_input.setText(settings.app_name)
+        self.host_input.setText(settings.host)
+        self.port_input.setValue(settings.port)
+        self.upload_dir_input.setText(str(settings.upload_dir))
+        self.max_file_size_input.setValue(settings.max_file_size_mb)
+        self.chunk_size_input.setValue(settings.upload_chunk_size_kb)
+        self.log_level_input.setCurrentText(settings.log_level)
+        self.log_dir_input.setText(str(settings.log_dir))
+        self.log_retention_input.setValue(settings.log_retention_days)
+        self.captive_enabled_input.setChecked(settings.captive_portal_enabled)
+        self.captive_port_input.setValue(settings.captive_portal_port)
+        self.captive_url_input.setText(settings.captive_portal_public_url or "")
+        self.hotspot_enabled_input.setChecked(settings.hotspot_enabled)
+        self.hotspot_ssid_input.setText(settings.hotspot_ssid)
+        self.hotspot_password_input.setText(settings.hotspot_password)
+        self.hotspot_gateway_input.setText(settings.hotspot_gateway_ip)
+
+    def save_settings(self) -> None:
+        form = {
+            "app_name": self.app_name_input.text().strip() or "WiFiDrop",
+            "host": self.host_input.text().strip() or "0.0.0.0",
+            "port": self.port_input.value(),
+            "upload_dir": self.upload_dir_input.text().strip() or "Files",
+            "max_file_size_mb": self.max_file_size_input.value(),
+            "upload_chunk_size_kb": self.chunk_size_input.value(),
+            "log_level": self.log_level_input.currentText(),
+            "log_dir": self.log_dir_input.text().strip() or "logs",
+            "log_retention_days": self.log_retention_input.value(),
+            "captive_portal_enabled": self.captive_enabled_input.isChecked(),
+            "captive_portal_port": self.captive_port_input.value(),
+            "captive_portal_public_url": self.captive_url_input.text().strip() or None,
+            "hotspot_enabled": self.hotspot_enabled_input.isChecked(),
+            "hotspot_ssid": self.hotspot_ssid_input.text().strip() or "WiFiDrop",
+            "hotspot_password": self.hotspot_password_input.text(),
+            "hotspot_gateway_ip": self.hotspot_gateway_input.text().strip() or "192.168.50.1",
+        }
+        try:
+            validated = Settings(_env_file=None, **form)
+            values = {
+                "APP_NAME": validated.app_name,
+                "HOST": validated.host,
+                "PORT": validated.port,
+                "UPLOAD_DIR": form["upload_dir"],
+                "MAX_FILE_SIZE_MB": validated.max_file_size_mb,
+                "UPLOAD_CHUNK_SIZE_KB": validated.upload_chunk_size_kb,
+                "LOG_LEVEL": validated.log_level,
+                "LOG_DIR": form["log_dir"],
+                "LOG_RETENTION_DAYS": validated.log_retention_days,
+                "CAPTIVE_PORTAL_ENABLED": validated.captive_portal_enabled,
+                "CAPTIVE_PORTAL_PORT": validated.captive_portal_port,
+                "CAPTIVE_PORTAL_PUBLIC_URL": validated.captive_portal_public_url or "",
+                "HOTSPOT_ENABLED": validated.hotspot_enabled,
+                "HOTSPOT_SSID": validated.hotspot_ssid,
+                "HOTSPOT_PASSWORD": validated.hotspot_password,
+                "HOTSPOT_GATEWAY_IP": validated.hotspot_gateway_ip,
+            }
+            update_env_file(PROJECT_ROOT / ".env", values)
+            get_settings.cache_clear()
+            self.settings = get_settings()
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка настроек", f"Не удалось сохранить настройки:\n{exc}")
+            return
+
+        self._load_settings_into_form()
+        self.append_log("[GUI] Настройки сохранены в .env.")
+        if self.process_is_running():
+            QMessageBox.information(
+                self,
+                "Настройки сохранены",
+                "Настройки сохранены. Чтобы они применились к уже запущенному серверу, остановите и снова запустите WiFiDrop.",
+            )
+        else:
+            QMessageBox.information(self, "Настройки сохранены", "Настройки успешно сохранены.")
+        self.refresh_network_state()
 
     def append_log(self, text: str) -> None:
         text = text.rstrip("\r\n")
