@@ -1,4 +1,4 @@
-export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
+export function initializeDropZone(dropZone, fileInput, onFiles) {
     const openPicker = () => {
         if (typeof fileInput.showPicker === "function") {
             try {
@@ -13,19 +13,9 @@ export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
         fileInput.click();
     };
 
-    // Кнопка выбора — нативный <label for="file-input">. Не перехватываем
-    // её click: браузер сам открывает системный выбор файлов. Это надёжнее
-    // программного click()/showPicker() в Chrome на Android.
-    browseButton.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            openPicker();
-        }
-    });
-
-    dropZone.addEventListener("click", (event) => {
-        if (!browseButton.contains(event.target)) openPicker();
-    });
+    // Вся зона загрузки — нативный <label for="file-input">, поэтому обычный
+    // клик/тап открывает системный выбор файлов без программного click().
+    // Для управления с клавиатуры оставляем явный вызов picker.
     dropZone.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();

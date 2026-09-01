@@ -10,7 +10,6 @@ import { ServerBusyError, UploadCancelledError, uploadFile } from "./uploader.js
 import { formatBytes, pluralizeFiles } from "./utils.js";
 
 const elements = {
-    browseButton: document.querySelector("#browse-button"),
     openBrowserButton: document.querySelector("#open-browser-button"),
     androidBrowserChooser: document.querySelector("#android-browser-chooser"),
     copyBrowserUrl: document.querySelector("#copy-browser-url"),
@@ -53,7 +52,6 @@ initializePwa(elements.installButton, (message) => notifications.show(message, "
 initializeDropZone(
     elements.dropZone,
     elements.fileInput,
-    elements.browseButton,
     addFiles,
 );
 elements.clearButton.addEventListener("click", () => {

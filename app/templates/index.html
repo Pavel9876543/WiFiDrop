@@ -89,7 +89,7 @@
         </section>
 
         <section class="transfer-card" aria-label="Загрузка файлов">
-            <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-controls="file-input">
+            <label class="drop-zone" id="drop-zone" for="file-input" tabindex="0" aria-controls="file-input">
                 <input class="file-input-accessible" id="file-input" type="file" multiple>
                 <div class="drop-zone__icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24">
@@ -100,7 +100,6 @@
                     <h2>Перетащите файлы сюда</h2>
                     <p>или нажмите, чтобы выбрать с устройства</p>
                 </div>
-                <label class="button button--secondary" id="browse-button" for="file-input" role="button" tabindex="0">Выбрать файлы</label>
                 <div class="drop-zone__meta">
                     <span>Любые форматы</span><i></i>
                     <span>
@@ -111,7 +110,7 @@
                         {% endif %}
                     </span>
                 </div>
-            </div>
+            </label>
 
             <div class="queue" id="queue" hidden>
                 <div class="queue__header">
@@ -164,6 +163,6 @@
     </footer>
     <div class="toast-region" id="toast-region" aria-live="assertive"></div>
 
-    <script type="module" src="{{ url_for('static', path='/js/app.js') }}?v=12"></script>
+    <script type="module" src="{{ url_for('static', path='/js/app.js') }}?v=13"></script>
 </body>
 </html>

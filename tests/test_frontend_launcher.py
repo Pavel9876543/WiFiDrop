@@ -8,7 +8,7 @@ def test_drop_zone_prefers_show_picker_with_click_fallback() -> None:
     source = (ROOT / "app/static/js/drop-zone.js").read_text(encoding="utf-8")
     assert "fileInput.showPicker()" in source
     assert "fileInput.click()" in source
-    assert "browseButton.contains(event.target)" in source
+    assert "browseButton.contains(event.target)" not in source
 
 
 def test_gui_launcher_installs_missing_dependencies() -> None:
