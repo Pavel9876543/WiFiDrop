@@ -35,7 +35,6 @@ const maxFileSizeMb = Number(document.body.dataset.maxFileSizeMb);
 const hasFileSizeLimit = Number.isFinite(maxFileSizeMb) && maxFileSizeMb > 0;
 const maxFileSizeBytes = hasFileSizeLimit ? maxFileSizeMb * 1024 * 1024 : null;
 const notifications = new Notifications(elements.toastRegion);
-const isCaptive = document.body.dataset.captive === "1";
 initializeBrowserLaunch(
     elements.openBrowserButton,
     elements.androidBrowserChooser,
@@ -43,26 +42,14 @@ initializeBrowserLaunch(
     elements.browserLaunchHint,
     (message, type) => notifications.show(message, type),
 );
-let pendingRenderItems = null;
-let renderFrame = null;
-const scheduleRender = (items) => {
-    pendingRenderItems = items;
-    if (renderFrame !== null) return;
-    renderFrame = window.requestAnimationFrame(() => {
-        renderFrame = null;
-        render(pendingRenderItems || []);
-    });
-};
-const queue = new UploadQueue(maxFileSizeBytes, scheduleRender);
+const queue = new UploadQueue(maxFileSizeBytes, render);
 const fileList = new FileListView(elements.fileList, handleFileAction);
 let currentRun = null;
 let busyRetryAllowedAt = 0;
 let busyRetryTimer = null;
 
 initializeTheme(elements.themeToggle);
-if (!isCaptive) {
-    initializePwa(elements.installButton, (message) => notifications.show(message, "success"));
-}
+initializePwa(elements.installButton, (message) => notifications.show(message, "success"));
 initializeDropZone(
     elements.dropZone,
     elements.fileInput,
@@ -128,8 +115,8 @@ function updateTotalProgress(items) {
     elements.totalProgress.hidden = !hasStarted;
     const totalBytes = items.reduce((total, item) => total + item.file.size, 0);
     const completedBytes = items.reduce((total, item) => {
-        if (item.status === "success") return total + item.file.size;
-        return total + Math.min(item.file.size, Math.max(0, item.loaded || 0));
+        if (item.status === "success" || item.status === "error") return total + item.file.size;
+        return total + item.file.size * (item.progress / 100);
     }, 0);
     const percentage = totalBytes > 0 ? Math.min(100, (completedBytes / totalBytes) * 100) : 0;
     elements.totalPercent.textContent = `${Math.round(percentage)}%`;
@@ -200,6 +187,8 @@ async function startUpload() {
             } else {
                 queue.update(item.id, {
                     status: "error",
+                    progress: 0,
+                    loaded: 0,
                     speed: 0,
                     message: error.message,
                 });

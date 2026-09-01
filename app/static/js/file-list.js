@@ -13,7 +13,6 @@ export class FileListView {
     constructor(container, onAction) {
         this.container = container;
         this.onAction = onAction;
-        this.rows = new Map();
         this.container.addEventListener("click", (event) => {
             const button = event.target.closest("[data-file-action-id]");
             if (button) this.onAction(button.dataset.fileActionId);
@@ -21,65 +20,61 @@ export class FileListView {
     }
 
     render(items) {
-        const activeIds = new Set(items.map((item) => item.id));
-        for (const [id, row] of this.rows) {
-            if (!activeIds.has(id)) {
-                row.remove();
-                this.rows.delete(id);
-            }
-        }
-
-        for (const item of items) {
-            let row = this.rows.get(item.id);
-            if (!row) {
-                row = this.createItem(item);
-                this.rows.set(item.id, row);
-                this.container.append(row);
-            }
-            this.updateItem(row, item);
-        }
+        const fragment = document.createDocumentFragment();
+        for (const item of items) fragment.append(this.createItem(item));
+        this.container.replaceChildren(fragment);
     }
 
     createItem(item) {
         const row = document.createElement("article");
         row.className = "file-item";
         row.dataset.fileId = item.id;
-        row.innerHTML = `
-            <span class="file-item__icon">${FILE_ICON}</span>
-            <div class="file-item__content">
-                <div class="file-item__topline">
-                    <span class="file-item__name"></span>
-                    <span class="file-item__percent"></span>
-                </div>
-                <div class="file-item__details">
-                    <span class="file-item__size"></span>
-                    <span class="file-item__status"></span>
-                </div>
-                <div class="file-item__progress"><span></span></div>
-            </div>
-            <button class="file-item__remove" type="button" data-file-action-id="${item.id}">${REMOVE_ICON}</button>
-        `;
-        return row;
-    }
 
-    updateItem(row, item) {
-        const name = row.querySelector(".file-item__name");
+        const icon = document.createElement("span");
+        icon.className = "file-item__icon";
+        icon.innerHTML = FILE_ICON;
+
+        const content = document.createElement("div");
+        content.className = "file-item__content";
+        const topLine = document.createElement("div");
+        topLine.className = "file-item__topline";
+        const name = document.createElement("span");
+        name.className = "file-item__name";
         name.title = item.file.name;
         name.textContent = item.file.name;
-        row.querySelector(".file-item__percent").textContent = this.progressText(item);
-        row.querySelector(".file-item__size").textContent = formatBytes(item.file.size);
+        const percent = document.createElement("span");
+        percent.className = "file-item__percent";
+        percent.textContent = this.progressText(item);
+        topLine.append(name, percent);
 
-        const status = row.querySelector(".file-item__status");
+        const details = document.createElement("div");
+        details.className = "file-item__details";
+        const size = document.createElement("span");
+        size.textContent = formatBytes(item.file.size);
+        const status = document.createElement("span");
         status.className = `file-item__status file-item__status--${item.status}`;
         status.textContent = this.statusText(item);
+        details.append(size, status);
 
-        row.querySelector(".file-item__progress span").style.width = `${item.progress}%`;
-        const remove = row.querySelector(".file-item__remove");
+        const progress = document.createElement("div");
+        progress.className = "file-item__progress";
+        const progressFill = document.createElement("span");
+        progressFill.style.width = `${item.progress}%`;
+        progress.append(progressFill);
+        content.append(topLine, details, progress);
+
+        const remove = document.createElement("button");
+        remove.className = "file-item__remove";
+        remove.type = "button";
+        remove.dataset.fileActionId = item.id;
         const actionLabel = item.status === "uploading"
             ? `Отменить загрузку ${item.file.name}`
             : `Убрать ${item.file.name}`;
         remove.ariaLabel = actionLabel;
         remove.title = actionLabel;
+        remove.innerHTML = REMOVE_ICON;
+        row.append(icon, content, remove);
+        return row;
     }
 
     progressText(item) {

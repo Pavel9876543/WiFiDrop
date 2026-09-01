@@ -63,10 +63,12 @@ export function uploadFile(file, onProgress, signal) {
                 const retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
                     ? Math.ceil(retryAfter)
                     : null;
-                finish(() => reject(new ServerBusyError(
-                    payload.message || "Сервер занят. Повторите отправку позже.",
-                    retryAfterSeconds,
-                )));
+                finish(() => {
+                    reject(new ServerBusyError(
+                        payload.message || "Сервер занят. Повторите отправку позже.",
+                        retryAfterSeconds,
+                    ));
+                });
                 return;
             }
             finish(() => {

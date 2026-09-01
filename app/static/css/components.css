@@ -590,6 +590,7 @@
     background: var(--danger);
 }
 
+/* Captive Portal browser hand-off. Additive: the original GitHub transfer UI remains available. */
 .browser-launch {
     display: flex;
     margin-bottom: 18px;
@@ -601,7 +602,6 @@
     background: var(--surface-solid);
     box-shadow: 0 12px 30px rgba(32, 31, 62, 0.08);
 }
-
 .browser-launch__icon {
     display: grid;
     width: 48px;
@@ -612,7 +612,6 @@
     border-radius: 14px;
     background: rgba(var(--accent-rgb), 0.09);
 }
-
 .browser-launch__icon svg,
 .browser-launch__button svg {
     width: 22px;
@@ -622,12 +621,7 @@
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-
-.browser-launch__content {
-    min-width: 0;
-    flex: 1;
-}
-
+.browser-launch__content { min-width: 0; flex: 1; }
 .browser-launch__eyebrow {
     color: var(--accent);
     font-size: 11px;
@@ -635,46 +629,9 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
 }
-
-.browser-launch h2 {
-    margin: 5px 0 6px;
-    font-size: 19px;
-    letter-spacing: -0.02em;
-}
-
-.browser-launch p {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 1.55;
-}
-
-.browser-launch__actions {
-    display: flex;
-    margin-top: 15px;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.browser-launch__button {
-    text-decoration: none;
-}
-
-.browser-launch[hidden],
-.transfer-card[hidden] {
-    display: none !important;
-}
-
-.hero--captive {
-    padding-bottom: 22px;
-}
-
-.browser-launch__hint {
-    margin-top: 10px !important;
-    color: var(--text-tertiary) !important;
-    font-size: 11px !important;
-}
-
-.browser-launch__hint--success {
-    color: var(--success) !important;
-}
+.browser-launch h2 { margin: 5px 0 6px; font-size: 19px; letter-spacing: -0.02em; }
+.browser-launch p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.browser-launch__actions { display: flex; margin-top: 15px; flex-wrap: wrap; gap: 10px; }
+.browser-launch__button { text-decoration: none; }
+.browser-launch__hint { margin-top: 10px !important; color: var(--text-tertiary) !important; font-size: 11px !important; }
+.browser-launch__hint--success { color: var(--success) !important; }

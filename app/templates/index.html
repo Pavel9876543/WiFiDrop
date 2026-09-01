@@ -60,12 +60,6 @@
 
     <main class="page-shell">
         {% if is_captive %}
-        <section class="hero hero--captive" aria-labelledby="hero-title">
-            <div class="eyebrow"><span></span> WiFiDrop подключён</div>
-            <h1 id="hero-title">Продолжите<br><span>в браузере</span></h1>
-            <p>Системное окно Wi-Fi ограничивает выбор файлов. Откройте WiFiDrop в полноценном браузере — адрес вводить не нужно.</p>
-        </section>
-
         <section class="browser-launch" id="browser-launch" aria-labelledby="browser-launch-title" data-browser-url="{{ browser_url }}">
             <div class="browser-launch__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></svg>
@@ -73,8 +67,8 @@
             <div class="browser-launch__content">
                 <div>
                     <span class="browser-launch__eyebrow">Системное окно Wi-Fi</span>
-                    <h2 id="browser-launch-title">Открыть WiFiDrop</h2>
-                    <p id="browser-launch-description">Нажмите кнопку ниже. Android или iPhone передаст ссылку установленному браузеру, если системное окно это разрешает.</p>
+                    <h2 id="browser-launch-title">Открыть WiFiDrop в браузере</h2>
+                    <p id="browser-launch-description">Если системное окно Wi-Fi ограничивает выбор файлов, откройте эту же страницу в полноценном браузере. Полный интерфейс WiFiDrop остаётся доступен и ниже.</p>
                 </div>
                 <div class="browser-launch__actions">
                     <a class="button button--primary browser-launch__button" id="open-browser-button" href="{{ browser_url }}" rel="external noopener noreferrer">
@@ -84,18 +78,17 @@
                     <button class="button button--secondary" id="android-browser-chooser" type="button" hidden>Выбрать браузер</button>
                     <button class="button button--secondary" id="copy-browser-url" type="button" data-url="{{ browser_url }}">Скопировать адрес</button>
                 </div>
-                <p class="browser-launch__hint" id="browser-launch-hint">Если ОС не выпустит ссылку из окна авторизации, скопируйте адрес и вставьте его в любой браузер.</p>
+                <p class="browser-launch__hint" id="browser-launch-hint">Если ОС не выпустит ссылку из Captive Portal, скопируйте адрес и вставьте его в браузер.</p>
             </div>
         </section>
-        {% else %}
+        {% endif %}
         <section class="hero" aria-labelledby="hero-title">
             <div class="eyebrow"><span></span> Передача без интернета</div>
             <h1 id="hero-title">Файлы уже почти<br><span>на этом компьютере</span></h1>
             <p>Выберите всё нужное — WiFiDrop сам разложит файлы по категориям и датам.</p>
         </section>
-        {% endif %}
 
-        <section class="transfer-card" aria-label="Загрузка файлов"{% if is_captive %} hidden{% endif %}>
+        <section class="transfer-card" aria-label="Загрузка файлов">
             <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-controls="file-input">
                 <input id="file-input" type="file" multiple hidden>
                 <div class="drop-zone__icon" aria-hidden="true">
@@ -107,7 +100,7 @@
                     <h2>Перетащите файлы сюда</h2>
                     <p>или нажмите, чтобы выбрать с устройства</p>
                 </div>
-                <label class="button button--secondary" id="browse-button" for="file-input" role="button" tabindex="0">Выбрать файлы</label>
+                <button class="button button--secondary" id="browse-button" type="button">Выбрать файлы</button>
                 <div class="drop-zone__meta">
                     <span>Любые форматы</span><i></i>
                     <span>
@@ -144,7 +137,7 @@
             </div>
         </section>
 
-        <section class="trust-row" aria-label="Преимущества"{% if is_captive %} hidden{% endif %}>
+        <section class="trust-row" aria-label="Преимущества">
             <div class="trust-item">
                 <span class="trust-item__icon">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>

@@ -1,23 +1,21 @@
 export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
-    const openPicker = () => {
-        // The visible control is a native <label for=file-input>. Keep this
-        // fallback for the drop zone and keyboard activation only.
-        fileInput.click();
-    };
+    const openPicker = () => fileInput.click();
 
     dropZone.addEventListener("click", (event) => {
-        if (event.target.closest("#browse-button") || event.target === fileInput) return;
+        if (event.target !== browseButton) openPicker();
+    });
+    browseButton.addEventListener("click", (event) => {
+        event.stopPropagation();
         openPicker();
     });
-    browseButton.addEventListener("keydown", (event) => {
+    dropZone.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openPicker();
         }
     });
     fileInput.addEventListener("change", () => {
-        const files = [...(fileInput.files || [])];
-        if (files.length) onFiles(files);
+        onFiles([...fileInput.files]);
         fileInput.value = "";
     });
 
@@ -38,3 +36,4 @@ export function initializeDropZone(dropZone, fileInput, browseButton, onFiles) {
     document.addEventListener("dragover", (event) => event.preventDefault());
     document.addEventListener("drop", (event) => event.preventDefault());
 }
+

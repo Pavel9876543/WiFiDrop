@@ -51,6 +51,8 @@ export class UploadQueue {
             if (!selectedIds.has(item.id) || item.status === "success") continue;
             Object.assign(item, {
                 status: "canceled",
+                progress: 0,
+                loaded: 0,
                 speed: 0,
                 message: "Загрузка отменена",
             });

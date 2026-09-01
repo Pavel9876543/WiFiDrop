@@ -153,27 +153,9 @@
 }
 
 @media (max-width: 599px) {
-    .browser-launch {
-        padding: 16px;
-        gap: 12px;
-        border-radius: 17px;
-    }
-
-    .browser-launch__icon {
-        width: 42px;
-        height: 42px;
-        flex-basis: 42px;
-    }
-
-    .browser-launch h2 {
-        font-size: 16px;
-    }
-
-    .browser-launch__actions {
-        flex-direction: column;
-    }
-
-    .browser-launch__actions .button {
-        width: 100%;
-    }
+    .browser-launch { padding: 16px; gap: 12px; border-radius: 17px; }
+    .browser-launch__icon { width: 42px; height: 42px; flex-basis: 42px; }
+    .browser-launch h2 { font-size: 16px; }
+    .browser-launch__actions { flex-direction: column; }
+    .browser-launch__actions .button { width: 100%; }
 }
