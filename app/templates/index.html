@@ -67,7 +67,7 @@
 
         <section class="transfer-card" aria-label="Загрузка файлов">
             <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-controls="file-input">
-                <input id="file-input" type="file" multiple hidden>
+                <input class="native-file-input" id="file-input" type="file" multiple>
                 <div class="drop-zone__icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24">
                         <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>
@@ -77,7 +77,7 @@
                     <h2>Перетащите файлы сюда</h2>
                     <p>или нажмите, чтобы выбрать с устройства</p>
                 </div>
-                <button class="button button--secondary" id="browse-button" type="button">Выбрать файлы</button>
+                <label class="button button--secondary" id="browse-button" for="file-input" role="button" tabindex="0">Выбрать файлы</label>
                 <div class="drop-zone__meta">
                     <span>Любые форматы</span><i></i>
                     <span>
