@@ -3,12 +3,17 @@ from __future__ import annotations
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
 from app.config.settings import get_settings
 from app.utils.network import get_preferred_local_ipv4_address
 
 router = APIRouter(include_in_schema=False)
+
+
+def _enabled() -> bool:
+    settings = get_settings()
+    return settings.captive_portal_enabled or settings.hotspot_enabled
 
 
 def _portal_url(request: Request) -> str:
@@ -48,7 +53,9 @@ def _portal_redirect(request: Request) -> RedirectResponse:
 # a redirect tells the OS that a sign-in page is present.
 @router.get("/generate_204")
 @router.get("/gen_204")
-async def android_probe(request: Request) -> RedirectResponse:
+async def android_probe(request: Request) -> Response:
+    if not _enabled():
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
     return _portal_redirect(request)
 
 
@@ -56,19 +63,25 @@ async def android_probe(request: Request) -> RedirectResponse:
 # word "Success"; redirecting instead makes the portal page available to CNA.
 @router.get("/hotspot-detect.html")
 @router.get("/library/test/success.html")
-async def apple_probe(request: Request) -> RedirectResponse:
+async def apple_probe(request: Request) -> Response:
+    if not _enabled():
+        return HTMLResponse("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>")
     return _portal_redirect(request)
 
 
 # Windows NCSI / Network Connectivity Status Indicator probes.
 @router.get("/connecttest.txt")
 @router.get("/ncsi.txt")
-async def windows_probe(request: Request) -> RedirectResponse:
+async def windows_probe(request: Request) -> Response:
+    if not _enabled():
+        return PlainTextResponse("Microsoft Connect Test")
     return _portal_redirect(request)
 
 
 @router.get("/redirect")
-async def generic_probe(request: Request) -> RedirectResponse:
+async def generic_probe(request: Request) -> Response:
+    if not _enabled():
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
     return _portal_redirect(request)
 
 
@@ -80,6 +93,8 @@ async def captive_portal_api(request: Request) -> JSONResponse:
     with DHCP option 114 / RFC 8910). Merely serving the endpoint cannot make a
     client discover it on an arbitrary third-party router.
     """
+    if not _enabled():
+        return JSONResponse({"captive": False}, headers={"Cache-Control": "no-store"})
     return JSONResponse(
         {
             "captive": True,
@@ -91,6 +106,8 @@ async def captive_portal_api(request: Request) -> JSONResponse:
 
 @router.get("/captive-portal")
 async def captive_portal_landing(request: Request) -> HTMLResponse:
+    if not _enabled():
+        return HTMLResponse("<!doctype html><html><body><p>Captive Portal выключен.</p></body></html>", status_code=404)
     target = _captive_entry_url(request)
     safe_target = target.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
     return HTMLResponse(

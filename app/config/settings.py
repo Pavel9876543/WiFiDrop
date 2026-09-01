@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     upload_chunk_size_kb: int = Field(default=1024, ge=64, le=16384)
     max_concurrent_uploads: int = Field(default=1, ge=1, le=32)
     upload_busy_retry_after_seconds: int = Field(default=5, ge=1, le=300)
-    captive_portal_enabled: bool = False
+    captive_portal_enabled: bool = True
     captive_portal_port: int = Field(default=80, ge=1, le=65535)
     captive_portal_public_url: str | None = None
     hotspot_enabled: bool = False

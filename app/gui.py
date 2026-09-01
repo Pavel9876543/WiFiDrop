@@ -161,6 +161,21 @@ class WiFiDropWindow(QMainWindow):
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
 
+        instruction_box = QGroupBox("Как пользоваться")
+        instruction_layout = QVBoxLayout(instruction_box)
+        instruction_label = QLabel(
+            "1. Нажмите «Запустить WiFiDrop». Если подходящей сети нет, программа попробует создать её автоматически.\n"
+            "2. На телефоне подключитесь к сети из поля «Имя сети» и введите указанный сетевой пароль.\n"
+            "3. Если Captive Portal включён, телефон может сам показать окно входа в сеть с WiFiDrop. "
+            "Если окно не появилось, откройте в браузере адрес из строки «Адрес WiFiDrop».\n"
+            "4. Если Captive Portal выключен, автоматическое окно и DNS-перехват не запускаются — "
+            "WiFiDrop открывается только по указанному адресу.\n"
+            "5. На странице WiFiDrop нажмите «Выбрать файлы» или перетащите их и затем нажмите «Загрузить»."
+        )
+        instruction_label.setWordWrap(True)
+        instruction_layout.addWidget(instruction_label)
+        layout.addWidget(instruction_box)
+
         settings_box = QGroupBox("Настройки WiFiDrop (.env)")
         settings_layout = QGridLayout(settings_box)
         self.app_name_input = QLineEdit()
@@ -419,7 +434,9 @@ class WiFiDropWindow(QMainWindow):
             self.site_status.setText(self.current_url)
             self.open_button.setEnabled(True)
 
-        if self.dns_server is not None:
+        if not self.settings.captive_portal_enabled:
+            self.portal_status.setText("Выключен в настройках")
+        elif self.dns_server is not None:
             self.portal_status.setText("Активен: DNS-перехват + HTTP Captive Portal")
         elif snapshot.dns_port_free:
             self.portal_status.setText("Готов: DNS-порт свободен, Captive Portal включится вместе с сервером")
@@ -474,8 +491,14 @@ class WiFiDropWindow(QMainWindow):
 
             return StartPreflight(
                 info=info,
-                captive_tcp_free=self._tcp_port_available("0.0.0.0", self.settings.captive_portal_port),
-                dns_port_free=self._udp_port_available(info.ipv4, 53),
+                captive_tcp_free=(
+                    self._tcp_port_available("0.0.0.0", self.settings.captive_portal_port)
+                    if self.settings.captive_portal_enabled else True
+                ),
+                dns_port_free=(
+                    self._udp_port_available(info.ipv4, 53)
+                    if self.settings.captive_portal_enabled else False
+                ),
                 firewall_message=firewall_message,
                 auto_created_hotspot=auto_created,
                 hotspot_error=hotspot_error,
@@ -514,7 +537,7 @@ class WiFiDropWindow(QMainWindow):
         if result.firewall_message:
             self.append_log(result.firewall_message)
 
-        if not result.captive_tcp_free:
+        if self.settings.captive_portal_enabled and not result.captive_tcp_free:
             self.start_button.setEnabled(True)
             QMessageBox.critical(
                 self,
@@ -542,6 +565,7 @@ class WiFiDropWindow(QMainWindow):
                     info.ipv4,
                     f"{prefix}.10",
                     f"{prefix}.200",
+                    captive_portal_enabled=self.settings.captive_portal_enabled,
                 )
                 self.dhcp_thread = threading.Thread(
                     target=self.dhcp_server.serve_forever,
@@ -555,31 +579,38 @@ class WiFiDropWindow(QMainWindow):
                 self.dhcp_thread = None
                 self.append_log(f"[GUI] DHCP не запущен: {exc}")
 
-        if result.dns_port_free:
-            try:
-                self.dns_server = CaptiveDnsServer(info.ipv4, info.ipv4)
-                self.dns_thread = threading.Thread(
-                    target=self.dns_server.serve_forever,
-                    name="wifidrop-mobile-hotspot-dns",
-                    daemon=True,
+        if self.settings.captive_portal_enabled:
+            if result.dns_port_free:
+                try:
+                    self.dns_server = CaptiveDnsServer(info.ipv4, info.ipv4)
+                    self.dns_thread = threading.Thread(
+                        target=self.dns_server.serve_forever,
+                        name="wifidrop-mobile-hotspot-dns",
+                        daemon=True,
+                    )
+                    self.dns_thread.start()
+                    self.append_log(f"[GUI] Captive DNS запущен на {info.ipv4}:53.")
+                    self.portal_status.setText("Активен: DNS-перехват + HTTP Captive Portal")
+                except OSError as exc:
+                    self.dns_server = None
+                    self.dns_thread = None
+                    self.append_log(f"[GUI] Captive DNS не запущен: {exc}")
+            else:
+                self.append_log(
+                    "[GUI] UDP/53 занят Windows ICS. Сайт будет доступен по адресу ниже, "
+                    "но системное уведомление Captive Portal на этом режиме Windows не гарантируется."
                 )
-                self.dns_thread.start()
-                self.append_log(f"[GUI] Captive DNS запущен на {info.ipv4}:53.")
-                self.portal_status.setText("Активен: DNS-перехват + HTTP Captive Portal")
-            except OSError as exc:
-                self.dns_server = None
-                self.dns_thread = None
-                self.append_log(f"[GUI] Captive DNS не запущен: {exc}")
         else:
-            self.append_log(
-                "[GUI] UDP/53 занят Windows ICS. Сайт будет доступен по адресу ниже, "
-                "но системное уведомление Captive Portal на этом режиме Windows не гарантируется."
-            )
+            self.portal_status.setText("Выключен в настройках")
+            self.append_log("[GUI] Captive Portal выключен: DNS-перехват и captive HTTP listener не запускаются.")
 
         env = QProcessEnvironment.systemEnvironment()
         env.insert("HOTSPOT_ENABLED", "false")
-        env.insert("CAPTIVE_PORTAL_ENABLED", "true")
-        env.insert("CAPTIVE_PORTAL_PUBLIC_URL", f"http://{info.ipv4}:{self.settings.port}/")
+        env.insert("CAPTIVE_PORTAL_ENABLED", "true" if self.settings.captive_portal_enabled else "false")
+        if self.settings.captive_portal_enabled:
+            env.insert("CAPTIVE_PORTAL_PUBLIC_URL", f"http://{info.ipv4}:{self.settings.port}/")
+        else:
+            env.remove("CAPTIVE_PORTAL_PUBLIC_URL")
         env.insert("PYTHONIOENCODING", "utf-8")
         env.insert("PYTHONUTF8", "1")
         self.process.setProcessEnvironment(env)

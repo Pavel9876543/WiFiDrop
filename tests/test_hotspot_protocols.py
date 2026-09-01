@@ -37,3 +37,18 @@ def test_dhcp_offer_and_ack_announce_gateway_dns_and_option_114() -> None:
     assert bytes([6, 4]) + socket.inet_aton("192.168.50.1") in offer
     assert bytes([114]) in offer
     assert b"/.well-known/captive-portal" in offer
+
+
+def test_dhcp_without_captive_portal_does_not_announce_dns_or_option_114() -> None:
+    server = CaptiveDhcpServer(
+        "192.168.50.1",
+        "192.168.50.1",
+        captive_portal_enabled=False,
+    )
+    offer = server.build_response(_dhcp_packet(1))
+
+    assert offer is not None
+    assert bytes([53, 1, OFFER]) in offer
+    assert bytes([6, 4]) + socket.inet_aton("192.168.50.1") not in offer
+    assert bytes([114]) not in offer
+    assert b"/.well-known/captive-portal" not in offer

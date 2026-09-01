@@ -148,6 +148,37 @@ def test_captive_portal_api_reports_portal_url(tmp_path: Path, monkeypatch) -> N
     }
 
 
+def test_disabled_captive_portal_does_not_redirect_probes(tmp_path: Path, monkeypatch) -> None:
+    disabled_settings = Settings(_env_file=None, captive_portal_enabled=False, hotspot_enabled=False)
+    monkeypatch.setattr("app.api.routes.captive_portal.get_settings", lambda: disabled_settings)
+
+    with create_test_client(tmp_path) as client:
+        android = client.get("/generate_204", follow_redirects=False)
+        apple = client.get("/hotspot-detect.html", follow_redirects=False)
+        windows = client.get("/connecttest.txt", follow_redirects=False)
+        api = client.get("/.well-known/captive-portal")
+        landing = client.get("/captive-portal", follow_redirects=False)
+
+    assert android.status_code == 204
+    assert apple.status_code == 200
+    assert "Success" in apple.text
+    assert windows.status_code == 200
+    assert windows.text == "Microsoft Connect Test"
+    assert api.json() == {"captive": False}
+    assert landing.status_code == 404
+
+
+def test_disabled_captive_portal_ignores_captive_query(tmp_path: Path, monkeypatch) -> None:
+    disabled_settings = Settings(_env_file=None, captive_portal_enabled=False)
+    monkeypatch.setattr("app.api.routes.pages.get_settings", lambda: disabled_settings)
+
+    with create_test_client(tmp_path) as client:
+        page = client.get("/?captive=1")
+
+    assert page.status_code == 200
+    assert 'id="open-browser-button"' not in page.text
+
+
 @pytest.mark.asyncio
 async def test_concurrent_upload_is_rejected_while_other_routes_stay_available() -> None:
     class BlockingUploadManager:

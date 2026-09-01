@@ -45,9 +45,11 @@ class CaptiveDhcpServer:
         pool_start: str = "192.168.50.10",
         pool_end: str = "192.168.50.200",
         lease_seconds: int = 3600,
+        captive_portal_enabled: bool = True,
     ) -> None:
         self.bind_ip = bind_ip
         self.gateway_ip = gateway_ip
+        self.captive_portal_enabled = captive_portal_enabled
         self.pool_start = ipaddress.IPv4Address(pool_start)
         self.pool_end = ipaddress.IPv4Address(pool_end)
         self.lease_seconds = lease_seconds
@@ -99,10 +101,13 @@ class CaptiveDhcpServer:
         options += bytes([54, 4]) + socket.inet_aton(self.gateway_ip)
         options += bytes([1, 4]) + socket.inet_aton("255.255.255.0")
         options += bytes([3, 4]) + socket.inet_aton(self.gateway_ip)
-        options += bytes([6, 4]) + socket.inet_aton(self.gateway_ip)
+        if self.captive_portal_enabled:
+            options += bytes([6, 4]) + socket.inet_aton(self.gateway_ip)
         options += bytes([51, 4]) + struct.pack("!I", self.lease_seconds)
-        options += bytes([114, len(f"http://{self.gateway_ip}/.well-known/captive-portal")])
-        options += f"http://{self.gateway_ip}/.well-known/captive-portal".encode("ascii")
+        if self.captive_portal_enabled:
+            captive_url = f"http://{self.gateway_ip}/.well-known/captive-portal"
+            options += bytes([114, len(captive_url)])
+            options += captive_url.encode("ascii")
         options += b"\xff"
         return bytes(fixed) + bytes(options)
 
