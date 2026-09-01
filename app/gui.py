@@ -51,6 +51,13 @@ from app.hotspot.windows import (
 )
 
 
+class NoWheelSpinBox(QSpinBox):
+    """Числовое поле, которое не меняет значение колесом мыши."""
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 - имя метода задаёт Qt
+        event.ignore()
+
+
 class WorkerSignals(QObject):
     finished = pyqtSignal(object)
     failed = pyqtSignal(str)
@@ -158,13 +165,13 @@ class WiFiDropWindow(QMainWindow):
         settings_layout = QGridLayout(settings_box)
         self.app_name_input = QLineEdit()
         self.host_input = QLineEdit()
-        self.port_input = QSpinBox()
+        self.port_input = NoWheelSpinBox()
         self.port_input.setRange(1, 65535)
         self.upload_dir_input = QLineEdit()
-        self.max_file_size_input = QSpinBox()
+        self.max_file_size_input = NoWheelSpinBox()
         self.max_file_size_input.setRange(0, 1_000_000)
         self.max_file_size_input.setSpecialValueText("Без ограничения")
-        self.chunk_size_input = QSpinBox()
+        self.chunk_size_input = NoWheelSpinBox()
         self.chunk_size_input.setRange(64, 16384)
         self.chunk_size_input.setSuffix(" КБ")
         self.log_level_input = QComboBox()
@@ -174,11 +181,11 @@ class WiFiDropWindow(QMainWindow):
             "ERROR — только ошибки; CRITICAL — только критические ошибки."
         )
         self.log_dir_input = QLineEdit()
-        self.log_retention_input = QSpinBox()
+        self.log_retention_input = NoWheelSpinBox()
         self.log_retention_input.setRange(1, 3650)
         self.log_retention_input.setSuffix(" дн.")
         self.captive_enabled_input = QCheckBox("Включать Captive Portal при обычном запуске")
-        self.captive_port_input = QSpinBox()
+        self.captive_port_input = NoWheelSpinBox()
         self.captive_port_input.setRange(1, 65535)
         self.captive_url_input = QLineEdit()
         self.captive_url_input.setPlaceholderText("Автоматически определить адрес")
@@ -186,6 +193,8 @@ class WiFiDropWindow(QMainWindow):
         self.hotspot_ssid_input = QLineEdit()
         self.hotspot_password_input = QLineEdit()
         self.hotspot_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.show_hotspot_password_input = QCheckBox("Показать пароль")
+        self.show_hotspot_password_input.toggled.connect(self._set_hotspot_password_visible)
         self.hotspot_gateway_input = QLineEdit()
 
         settings_rows = [
@@ -209,7 +218,14 @@ class WiFiDropWindow(QMainWindow):
             label.setToolTip(tooltip)
             widget.setToolTip(tooltip)
             settings_layout.addWidget(label, row, 0)
-            settings_layout.addWidget(widget, row, 1)
+            if widget is self.hotspot_password_input:
+                password_layout = QHBoxLayout()
+                password_layout.setContentsMargins(0, 0, 0, 0)
+                password_layout.addWidget(widget, 1)
+                password_layout.addWidget(self.show_hotspot_password_input)
+                settings_layout.addLayout(password_layout, row, 1)
+            else:
+                settings_layout.addWidget(widget, row, 1)
         settings_layout.addWidget(self.captive_enabled_input, len(settings_rows), 0, 1, 2)
         settings_layout.addWidget(self.hotspot_enabled_input, len(settings_rows) + 1, 0, 1, 2)
         self.save_settings_button = QPushButton("Сохранить настройки")
@@ -650,6 +666,10 @@ class WiFiDropWindow(QMainWindow):
 
     def _process_error(self, error: QProcess.ProcessError) -> None:
         self.append_log(f"[GUI] Ошибка процесса: {error.name}")
+
+    def _set_hotspot_password_visible(self, visible: bool) -> None:
+        mode = QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password
+        self.hotspot_password_input.setEchoMode(mode)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.timer.stop()
