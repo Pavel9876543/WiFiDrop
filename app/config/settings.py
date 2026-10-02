@@ -1,8 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.utils.local_name import domain_hostname, normalize_local_name
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,11 +34,44 @@ class Settings(BaseSettings):
     captive_portal_enabled: bool = True
     captive_portal_port: int = Field(default=80, ge=1, le=65535)
     captive_portal_public_url: str | None = None
+    connection_mode: Literal["hotspot", "router"] = "hotspot"
+    router_ip: str | None = None
+    local_domain: str | None = None
+    local_domain_method: Literal["mdns", "router_dns"] = "mdns"
     hotspot_enabled: bool = False
     auto_create_hotspot: bool = True
     hotspot_ssid: str = "WiFiDrop"
     hotspot_password: str = "12347890"
     hotspot_gateway_ip: str = "192.168.50.1"
+
+    @field_validator("router_ip")
+    @classmethod
+    def validate_router_ip(cls, value: str | None) -> str | None:
+        import ipaddress
+
+        if not value or not value.strip():
+            return None
+        address = ipaddress.IPv4Address(value.strip())
+        if address.is_loopback or address.is_unspecified or address.is_multicast:
+            raise ValueError("ROUTER_IP must be a LAN IPv4 address of this computer")
+        return str(address)
+
+    @field_validator("local_domain")
+    @classmethod
+    def validate_local_domain(cls, value: str | None) -> str | None:
+        return normalize_local_name(value)
+
+    @model_validator(mode="after")
+    def validate_domain_method(self):
+        if self.local_domain:
+            domain_hostname(self.local_domain, self.local_domain_method)
+        return self
+
+    @property
+    def captive_enabled(self) -> bool:
+        return self.connection_mode == "hotspot" and (
+            self.captive_portal_enabled or self.hotspot_enabled
+        )
 
     @field_validator("log_level")
     @classmethod
