@@ -3,7 +3,13 @@ from __future__ import annotations
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 
 from app.config.settings import get_settings
 from app.utils.network import get_preferred_local_ipv4_address
@@ -13,7 +19,7 @@ router = APIRouter(include_in_schema=False)
 
 def _enabled() -> bool:
     settings = get_settings()
-    return settings.captive_portal_enabled or settings.hotspot_enabled
+    return settings.effective_captive_enabled
 
 
 def _portal_url(request: Request) -> str:

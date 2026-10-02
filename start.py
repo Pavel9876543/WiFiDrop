@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 
 import uvicorn
@@ -7,6 +8,7 @@ import uvicorn
 from app.config.settings import get_settings
 from app.hotspot.manager import WindowsCaptiveHotspot
 from app.hotspot.windows import HotspotError
+from app.services.router_connection import RouterConnection
 from app.utils.network import get_local_ipv4_addresses, get_preferred_local_ipv4_address
 
 
@@ -25,7 +27,7 @@ def main() -> None:
     settings = get_settings()
     hotspot: WindowsCaptiveHotspot | None = None
 
-    if settings.hotspot_enabled:
+    if settings.effective_hotspot_enabled:
         hotspot = WindowsCaptiveHotspot(
             ssid=settings.hotspot_ssid,
             password=settings.hotspot_password,
@@ -60,9 +62,9 @@ def main() -> None:
     for address in get_local_ipv4_addresses():
         print(f"  Local network: http://{address}:{settings.port}")
 
-    captive_enabled = settings.captive_portal_enabled or settings.hotspot_enabled
+    captive_enabled = settings.effective_captive_enabled
     if captive_enabled:
-        if settings.hotspot_enabled:
+        if settings.effective_hotspot_enabled:
             portal_address = f"http://{settings.hotspot_gateway_ip}:{settings.port}/"
         else:
             portal_address = settings.captive_portal_public_url
@@ -82,6 +84,14 @@ def main() -> None:
             thread.start()
 
     print("\nPress Ctrl+C to stop the server.\n")
+    connection = None
+    if settings.connection_mode == "router" and os.environ.get("WIFIDROP_GUI_ROUTER") != "1":
+        try:
+            connection = RouterConnection(settings, report=lambda line: print(line, flush=True))
+            connection.start()
+        except ValueError as exc:
+            print(f"[WiFiDrop] {exc}")
+            return
     try:
         uvicorn.run(
             "app.main:app",
@@ -92,6 +102,8 @@ def main() -> None:
             workers=1,
         )
     finally:
+        if connection:
+            connection.close()
         if hotspot:
             print("[WiFiDrop] Stopping hotspot...")
             hotspot.stop()

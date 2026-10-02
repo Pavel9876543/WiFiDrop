@@ -17,7 +17,7 @@ async def home(request: Request) -> HTMLResponse:
         context={
             "app_name": settings.app_name,
             "max_file_size_mb": settings.max_file_size_mb,
-            "is_captive": (settings.captive_portal_enabled or settings.hotspot_enabled)
+            "is_captive": settings.effective_captive_enabled
             and request.query_params.get("captive") == "1",
             "browser_url": str(request.url.replace(query="")),
         },

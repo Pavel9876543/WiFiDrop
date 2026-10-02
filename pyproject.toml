@@ -18,6 +18,9 @@ dependencies = [
     "starlette>=0.40,<0.53",
     "uvicorn>=0.35,<1",
     "PyQt6>=6.7,<7",
+    "qrcode[pil]>=8,<9",
+    "zeroconf>=0.148,<1",
+    "idna>=3,<4",
 ]
 
 [project.optional-dependencies]

@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -33,9 +34,51 @@ class Settings(BaseSettings):
     captive_portal_public_url: str | None = None
     hotspot_enabled: bool = False
     auto_create_hotspot: bool = True
+    connection_mode: Literal["hotspot", "router"] = "hotspot"
+    router_ip: str | None = None
+    local_name: str | None = None
+    local_name_mode: Literal["mdns", "dns"] = "mdns"
     hotspot_ssid: str = "WiFiDrop"
     hotspot_password: str = "12347890"
     hotspot_gateway_ip: str = "192.168.50.1"
+
+    @field_validator("router_ip")
+    @classmethod
+    def validate_router_ip(cls, value: str | None) -> str | None:
+        from ipaddress import IPv4Address
+
+        if value is None or not value.strip():
+            return None
+        address = IPv4Address(value.strip())
+        if address.is_loopback or address.is_unspecified or address.is_multicast:
+            raise ValueError("ROUTER_IP must be a local interface IPv4 address")
+        return str(address)
+
+    @field_validator("local_name")
+    @classmethod
+    def validate_local_name(cls, value: str | None) -> str | None:
+        from app.utils.local_name import normalize_local_name
+
+        return normalize_local_name(value)
+
+    @model_validator(mode="after")
+    def validate_name_mode(self) -> "Settings":
+        if self.local_name and self.local_name_mode == "mdns":
+            name = self.local_name.removesuffix(".local")
+            if "." in name:
+                raise ValueError("Для mDNS введите одно имя; для DNS роутера выберите режим DNS")
+            self.local_name = name
+        return self
+
+    @property
+    def effective_hotspot_enabled(self) -> bool:
+        return self.connection_mode == "hotspot" and self.hotspot_enabled
+
+    @property
+    def effective_captive_enabled(self) -> bool:
+        return self.connection_mode == "hotspot" and (
+            self.captive_portal_enabled or self.hotspot_enabled
+        )
 
     @field_validator("log_level")
     @classmethod
