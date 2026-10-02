@@ -18,6 +18,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
+python.exe -c "import qrcode, PIL, zeroconf, idna" >nul 2>&1
+if errorlevel 1 del ".venv\.wifidrop-ready" >nul 2>&1
 if not exist ".venv\.wifidrop-ready" (
     echo [WiFiDrop] Installing dependencies...
     python.exe -m pip install --upgrade pip
@@ -25,9 +27,11 @@ if not exist ".venv\.wifidrop-ready" (
     python.exe -m pip install -r requirements.txt
     if errorlevel 1 goto :install_error
     if not exist ".venv" mkdir ".venv"
+    if not exist ".venv" mkdir ".venv"
     type nul > ".venv\.wifidrop-ready"
 )
 
+set CONNECTION_MODE=hotspot
 set HOTSPOT_ENABLED=true
 set CAPTIVE_PORTAL_ENABLED=true
 set CAPTIVE_PORTAL_PORT=80

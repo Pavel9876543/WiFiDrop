@@ -23,7 +23,10 @@ if not exist ".venv\.wifidrop-ready" (
 )
 
 echo.
-echo [WiFiDrop] Starting the server...
+set CONNECTION_MODE=router
+set HOTSPOT_ENABLED=false
+set CAPTIVE_PORTAL_ENABLED=false
+echo [WiFiDrop] Starting through router...
 echo.
 "python.exe" start.py
 exit /b %errorlevel%

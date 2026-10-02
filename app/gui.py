@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import json
 import os
 import socket
 import sys
@@ -14,13 +15,13 @@ from PyQt6.QtCore import (
     QProcess,
     QProcessEnvironment,
     QRunnable,
+    Qt,
     QThreadPool,
     QTimer,
-    Qt,
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QDesktopServices, QFont
+from PyQt6.QtGui import QDesktopServices, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -34,8 +35,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QPushButton,
     QPlainTextEdit,
+    QPushButton,
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
@@ -52,6 +53,8 @@ from app.hotspot.windows import (
     ensure_hosted_network_with_elevation,
     stop_hosted_network_with_elevation,
 )
+from app.services.router_access import ACCESS_PREFIX
+from app.utils.network import get_router_interfaces, select_router_ip
 
 
 class NoWheelSpinBox(QSpinBox):
@@ -85,6 +88,7 @@ class FunctionWorker(QRunnable):
 class NetworkSnapshot:
     info: Any | None
     dns_port_free: bool | None
+    router_interfaces: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,12 +116,22 @@ class WiFiDropWindow(QMainWindow):
         self.process.finished.connect(self._process_finished)
         self.process.errorOccurred.connect(self._process_error)
 
-        self.setWindowTitle("WiFiDrop — сервер и мобильный хот-спот")
+        self.setWindowTitle("WiFiDrop — хот-спот и роутер")
         self.resize(960, 840)
 
         root = QWidget(self)
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
+
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("Режим подключения:"))
+        self.mode_input = QComboBox()
+        self.mode_input.addItem("Мобильный хот-спот", "hotspot")
+        self.mode_input.addItem("Через роутер", "router")
+        self.mode_input.setCurrentIndex(self.mode_input.findData(self.settings.connection_mode))
+        mode_layout.addWidget(self.mode_input)
+        mode_layout.addStretch(1)
+        layout.addLayout(mode_layout)
 
         status_box = QGroupBox("Состояние")
         status_layout = QGridLayout(status_box)
@@ -137,7 +151,24 @@ class WiFiDropWindow(QMainWindow):
         status_layout.addWidget(QLabel("Captive Portal:"), 3, 0)
         status_layout.addWidget(self.portal_status, 3, 1)
         status_layout.setColumnStretch(1, 1)
+        self.domain_status = QLabel("—")
+        self.domain_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.domain_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        status_layout.addWidget(QLabel("Локальное имя:"), 4, 0)
+        status_layout.addWidget(self.domain_status, 4, 1)
         layout.addWidget(status_box)
+        self.qr_box = QGroupBox("QR-код для открытия сайта")
+        qr_layout = QHBoxLayout(self.qr_box)
+        self.qr_image = QLabel()
+        self.qr_image.setFixedSize(200, 200)
+        self.qr_description = QLabel()
+        self.qr_description.setWordWrap(True)
+        self.qr_description.setTextFormat(Qt.TextFormat.PlainText)
+        self.qr_description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        qr_layout.addWidget(self.qr_image)
+        qr_layout.addWidget(self.qr_description, 1)
+        self.qr_box.setVisible(False)
+        layout.addWidget(self.qr_box)
 
         buttons = QHBoxLayout()
         self.start_button = QPushButton("Запустить WiFiDrop")
@@ -167,6 +198,13 @@ class WiFiDropWindow(QMainWindow):
 
         settings_box = QGroupBox("Настройки WiFiDrop (.env)")
         settings_layout = QGridLayout(settings_box)
+        self.router_ip_input = QComboBox()
+        self.router_ip_input.addItem("Автоматически (проверьте выбранный IP)", "")
+        self.local_domain_input = QLineEdit()
+        self.local_domain_input.setPlaceholderText("otrozhka или отрожка; пусто — доступ по IP")
+        self.local_domain_method_input = QComboBox()
+        self.local_domain_method_input.addItem("mDNS — имя.local", "mdns")
+        self.local_domain_method_input.addItem("DNS роутера — заранее настроенное имя", "router_dns")
         self.app_name_input = QLineEdit()
         self.host_input = QLineEdit()
         self.port_input = NoWheelSpinBox()
@@ -202,6 +240,12 @@ class WiFiDropWindow(QMainWindow):
         self.hotspot_gateway_input = QLineEdit()
 
         settings_rows = [
+            ("IP компьютера через роутер:", self.router_ip_input,
+             "Выберите Wi-Fi/Ethernet компьютера. Адрес роутера сюда вводить не нужно."),
+            ("Локальное доменное имя:", self.local_domain_input,
+             "Латиница/кириллица. В mDNS к одному имени добавится .local. Пусто — QR по IP."),
+            ("Способ локального имени:", self.local_domain_method_input,
+             "mDNS не меняет роутер. Для DNS роутера запись нужно настроить самостоятельно."),
             ("Название приложения:", self.app_name_input, "Имя, которое отображается на веб-странице."),
             ("Адрес прослушивания:", self.host_input, "Обычно 0.0.0.0 — принимать подключения со всех сетевых интерфейсов."),
             ("Порт сайта:", self.port_input, "TCP-порт, по которому открывается WiFiDrop."),
@@ -260,6 +304,10 @@ class WiFiDropWindow(QMainWindow):
         self.dhcp_server: CaptiveDhcpServer | None = None
         self.dhcp_thread: threading.Thread | None = None
         self._auto_created_hotspot = False
+        self._output_buffer = ""
+        self._close_requested = False
+        self.mode_input.currentIndexChanged.connect(self._mode_changed)
+        self._update_mode_controls()
 
         self.timer = QTimer(self)
         self.timer.setInterval(2000)
@@ -269,6 +317,15 @@ class WiFiDropWindow(QMainWindow):
 
     def _load_settings_into_form(self) -> None:
         settings = self.settings
+        index = self.router_ip_input.findData(settings.router_ip or "")
+        if index < 0:
+            self.router_ip_input.addItem(settings.router_ip, settings.router_ip)
+            index = self.router_ip_input.count() - 1
+        self.router_ip_input.setCurrentIndex(index)
+        self.local_domain_input.setText(settings.local_domain or "")
+        self.local_domain_method_input.setCurrentIndex(
+            self.local_domain_method_input.findData(settings.local_domain_method)
+        )
         self.app_name_input.setText(settings.app_name)
         self.host_input.setText(settings.host)
         self.port_input.setValue(settings.port)
@@ -287,7 +344,14 @@ class WiFiDropWindow(QMainWindow):
         self.hotspot_gateway_input.setText(settings.hotspot_gateway_ip)
 
     def save_settings(self) -> None:
+        if self.process_is_running() or self._start_preflight_running:
+            QMessageBox.information(self, "Сервер работает", "Остановите сервер перед изменением настроек.")
+            return
         form = {
+            "connection_mode": self.mode_input.currentData(),
+            "router_ip": self.router_ip_input.currentData() or None,
+            "local_domain": self.local_domain_input.text().strip() or None,
+            "local_domain_method": self.local_domain_method_input.currentData(),
             "app_name": self.app_name_input.text().strip() or "WiFiDrop",
             "host": self.host_input.text().strip() or "0.0.0.0",
             "port": self.port_input.value(),
@@ -309,6 +373,10 @@ class WiFiDropWindow(QMainWindow):
         try:
             validated = Settings(_env_file=None, **form)
             values = {
+                "CONNECTION_MODE": validated.connection_mode,
+                "ROUTER_IP": validated.router_ip or "",
+                "LOCAL_DOMAIN": validated.local_domain or "",
+                "LOCAL_DOMAIN_METHOD": validated.local_domain_method,
                 "APP_NAME": validated.app_name,
                 "HOST": validated.host,
                 "PORT": validated.port,
@@ -344,6 +412,34 @@ class WiFiDropWindow(QMainWindow):
             )
         else:
             QMessageBox.information(self, "Настройки сохранены", "Настройки успешно сохранены.")
+        self.refresh_network_state()
+
+    def _update_mode_controls(self) -> None:
+        router = self.settings.connection_mode == "router"
+        self.settings_button.setEnabled(not router)
+        for widget in (self.captive_enabled_input, self.captive_port_input, self.captive_url_input,
+                       self.hotspot_enabled_input, self.hotspot_ssid_input,
+                       self.hotspot_password_input, self.show_hotspot_password_input,
+                       self.hotspot_gateway_input):
+            widget.setEnabled(not router)
+        for widget in (self.router_ip_input, self.local_domain_input, self.local_domain_method_input):
+            widget.setEnabled(router)
+
+    def _mode_changed(self) -> None:
+        try:
+            update_env_file(PROJECT_ROOT / ".env", {"CONNECTION_MODE": self.mode_input.currentData()})
+            get_settings.cache_clear()
+            self.settings = get_settings()
+        except Exception as exc:
+            self.append_log(f"[GUI] Не удалось сохранить режим: {exc}")
+            self.mode_input.blockSignals(True)
+            self.mode_input.setCurrentIndex(self.mode_input.findData(self.settings.connection_mode))
+            self.mode_input.blockSignals(False)
+            return
+        self.current_url = None
+        self.domain_status.setText("—")
+        self.qr_box.setVisible(False)
+        self._update_mode_controls()
         self.refresh_network_state()
 
     def append_log(self, text: str) -> None:
@@ -393,6 +489,8 @@ class WiFiDropWindow(QMainWindow):
         self._network_refresh_running = True
 
         def inspect() -> NetworkSnapshot:
+            if self.settings.connection_mode == "router":
+                return NetworkSnapshot(None, None, tuple(get_router_interfaces()))
             info = detect_mobile_hotspot() if os.name == "nt" else None
             dns_free = None if info is None else self._udp_port_available(info.ipv4, 53)
             return NetworkSnapshot(info=info, dns_port_free=dns_free)
@@ -405,6 +503,23 @@ class WiFiDropWindow(QMainWindow):
 
     def _apply_network_snapshot(self, snapshot: NetworkSnapshot) -> None:
         self._network_refresh_running = False
+        if self.settings.connection_mode == "router":
+            interfaces = snapshot.router_interfaces
+            selected = self.router_ip_input.currentData() or self.settings.router_ip or ""
+            self.router_ip_input.blockSignals(True)
+            self.router_ip_input.clear()
+            self.router_ip_input.addItem("Автоматически (проверьте выбранный IP)", "")
+            for name, ip in interfaces:
+                self.router_ip_input.addItem(f"{name} — {ip}", ip)
+            if selected and self.router_ip_input.findData(selected) < 0:
+                self.router_ip_input.addItem(f"{selected} — недоступен", selected)
+            self.router_ip_input.setCurrentIndex(max(0, self.router_ip_input.findData(selected)))
+            self.router_ip_input.blockSignals(False)
+            self.hotspot_status.setText("Режим через роутер")
+            self.adapter_status.setText("; ".join(f"{name} — {ip}" for name, ip in interfaces)
+                                        or "Локальная сеть не найдена")
+            self.portal_status.setText("Выключен в режиме роутера; откройте URL или QR вручную")
+            return
         info = snapshot.info
         if info is None:
             self.hotspot_status.setText("Не обнаружен")
@@ -453,6 +568,22 @@ class WiFiDropWindow(QMainWindow):
         title = QLabel("<h2>Инструкции WiFiDrop</h2>")
         content_layout.addWidget(title)
 
+        router_help = QLabel(
+            "<b>Через роутер</b><br>Выберите этот режим, подключите компьютер и телефон к одному "
+            "роутеру. В настройках выберите IP компьютера и нажмите «Сохранить настройки», затем запустите сервер. "
+            "Откройте HTTP-адрес с портом или отсканируйте QR в основном окне. Изображение "
+            "<code>wifidrop_qr.png</code> сохраняется в корне проекта.<br><br>"
+            "Имя <code>otrozhka</code> в mDNS станет <code>http://otrozhka.local:8000/</code>; "
+            "кириллица поддерживается через IDNA. Доступ зависит от поддержки mDNS клиентом и разрешённого "
+            "multicast в сети. Для имени без .local выберите DNS роутера и заранее создайте в роутере "
+            "запись имени на IP компьютера (лучше закрепить IP). Настройки сети программа не меняет.<br><br>"
+            "Для адреса без :порта установите порт сайта 80, если он свободен. Одно слово в строке браузера "
+            "может стать поисковым запросом; надёжнее полный URL или QR. Автоматического окна входа в сеть "
+            "в режиме роутера нет. При проблемах с именем используйте IP. Гостевая сеть с изоляцией клиентов "
+            "может блокировать доступ. В Windows разрешите Python доступ к частной сети в брандмауэре."
+        )
+        router_help.setWordWrap(True)
+        content_layout.addWidget(router_help)
         usage = QLabel(
             "<b>Как пользоваться</b><br><br>"
             "1. Нажмите <b>«Запустить WiFiDrop»</b>. Программа найдёт работающий мобильный хот-спот Windows. "
@@ -534,7 +665,11 @@ class WiFiDropWindow(QMainWindow):
     def start_server(self) -> None:
         if self.process_is_running() or self._start_preflight_running:
             return
+        if self.settings.connection_mode == "router":
+            self._start_router_server()
+            return
         self._start_preflight_running = True
+        self.mode_input.setEnabled(False)
         self.start_button.setEnabled(False)
         self.append_log("[GUI] Проверка сети и подготовка запуска...")
 
@@ -591,6 +726,7 @@ class WiFiDropWindow(QMainWindow):
 
     def _start_preflight_failed(self, message: str) -> None:
         self._start_preflight_running = False
+        self.mode_input.setEnabled(True)
         self.start_button.setEnabled(True)
         self.append_log(f"[GUI] Подготовка запуска завершилась ошибкой: {message}")
         QMessageBox.critical(self, "Ошибка запуска", message)
@@ -600,6 +736,7 @@ class WiFiDropWindow(QMainWindow):
         info = result.info
         if info is None:
             self.start_button.setEnabled(True)
+            self.mode_input.setEnabled(True)
             detail = result.hotspot_error or "Подходящая Wi-Fi сеть не обнаружена."
             QMessageBox.warning(
                 self,
@@ -622,6 +759,7 @@ class WiFiDropWindow(QMainWindow):
 
         if self.settings.captive_portal_enabled and not result.captive_tcp_free:
             self.start_button.setEnabled(True)
+            self.mode_input.setEnabled(True)
             QMessageBox.critical(
                 self,
                 "Порт Captive Portal занят",
@@ -634,6 +772,7 @@ class WiFiDropWindow(QMainWindow):
         if self._auto_created_hotspot:
             if not self._udp_port_available("0.0.0.0", 67):
                 self.start_button.setEnabled(True)
+                self.mode_input.setEnabled(True)
                 QMessageBox.critical(
                     self,
                     "DHCP-порт занят",
@@ -688,6 +827,8 @@ class WiFiDropWindow(QMainWindow):
             self.append_log("[GUI] Captive Portal выключен: DNS-перехват и captive HTTP listener не запускаются.")
 
         env = QProcessEnvironment.systemEnvironment()
+        env.insert("CONNECTION_MODE", "hotspot")
+        env.insert("PYTHONUNBUFFERED", "1")
         env.insert("HOTSPOT_ENABLED", "false")
         env.insert("CAPTIVE_PORTAL_ENABLED", "true" if self.settings.captive_portal_enabled else "false")
         if self.settings.captive_portal_enabled:
@@ -706,6 +847,61 @@ class WiFiDropWindow(QMainWindow):
         self.current_url = f"http://{info.ipv4}:{self.settings.port}/"
         self.site_status.setText(self.current_url)
         self.open_button.setEnabled(True)
+
+    def _start_router_server(self) -> None:
+        self._start_preflight_running = True
+        self.start_button.setEnabled(False)
+        self.mode_input.setEnabled(False)
+
+        def inspect() -> str:
+            ip = select_router_ip(self.settings.router_ip, self.settings.host)
+            if not self._tcp_port_available(self.settings.host, self.settings.port):
+                raise ValueError(f"TCP-порт {self.settings.port} занят")
+            return ip
+
+        def launch(ip: str) -> None:
+            self._start_preflight_running = False
+            env = QProcessEnvironment.systemEnvironment()
+            env.insert("CONNECTION_MODE", "router")
+            env.insert("WIFIDROP_GUI_CONTROL", "1")
+            env.insert("ROUTER_IP", ip)
+            env.insert("HOTSPOT_ENABLED", "false")
+            env.insert("CAPTIVE_PORTAL_ENABLED", "false")
+            env.insert("PYTHONUNBUFFERED", "1")
+            env.insert("PYTHONIOENCODING", "utf-8")
+            env.insert("PYTHONUTF8", "1")
+            self.process.setProcessEnvironment(env)
+            self.process.setWorkingDirectory(str(PROJECT_ROOT))
+            self._process_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            self._output_buffer = ""
+            self.append_log(f"[GUI] Запуск через роутер: http://{ip}:{self.settings.port}/")
+            self.site_status.setText("Запуск сервера...")
+            self.process.start(sys.executable, ["-X", "utf8", str(PROJECT_ROOT / "start.py")])
+            self.stop_button.setEnabled(True)
+
+        def failed(message: str) -> None:
+            self._start_preflight_running = False
+            self.start_button.setEnabled(True)
+            self.mode_input.setEnabled(True)
+            QMessageBox.warning(self, "Не удалось запустить через роутер", message)
+
+        self._start_worker(inspect, launch, failed)
+
+    def _show_access(self, payload: dict[str, str]) -> None:
+        self.current_url = payload["url"]
+        self.site_status.setText(payload["ip_url"])
+        self.domain_status.setText(payload["domain_url"] or "Не задано или недоступно; используйте IP")
+        self.open_button.setEnabled(True)
+        path = payload["qr_path"]
+        if path:
+            pixmap = QPixmap(path)
+            self.qr_image.setPixmap(pixmap.scaled(
+                200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
+            ))
+            self.qr_description.setText(f"{self.current_url}\n\nQR сохранён: {path}")
+            self.qr_box.setVisible(not pixmap.isNull())
+        else:
+            self.qr_box.setVisible(False)
 
     def _stop_auto_created_hotspot(self) -> None:
         if not self._auto_created_hotspot:
@@ -734,10 +930,15 @@ class WiFiDropWindow(QMainWindow):
             self.dhcp_server = None
             self.dhcp_thread = None
         self._stop_auto_created_hotspot()
-        self.process.terminate()
+        if self.settings.connection_mode == "router":
+            # Console processes on Windows do not handle QProcess.terminate().
+            # Ask Uvicorn to shut down via its private stdin pipe, including mDNS cleanup.
+            self.process.write(b"stop\n")
+        else:
+            self.process.terminate()
         # Never block the Qt event loop waiting for a child process. If graceful
         # shutdown takes too long, kill it from a timer callback instead.
-        QTimer.singleShot(2500, self._kill_process_if_needed)
+        QTimer.singleShot(7000, self._kill_process_if_needed)
 
     def _kill_process_if_needed(self) -> None:
         if self.process_is_running():
@@ -753,12 +954,20 @@ class WiFiDropWindow(QMainWindow):
         # QProcess may split one UTF-8 character between readyRead signals.
         # Incremental decoding preserves incomplete multibyte sequences until
         # the next chunk instead of replacing them with mojibake.
-        text = self._process_decoder.decode(data, final=False)
-        for line in text.splitlines():
-            self.append_log(line)
+        self._output_buffer += self._process_decoder.decode(data, final=False)
+        while "\n" in self._output_buffer:
+            line, self._output_buffer = self._output_buffer.split("\n", 1)
+            if line.startswith(ACCESS_PREFIX):
+                try:
+                    self._show_access(json.loads(line[len(ACCESS_PREFIX):]))
+                except (ValueError, KeyError) as exc:
+                    self.append_log(f"[GUI] Не удалось показать QR: {exc}")
+            else:
+                self.append_log(line)
 
     def _process_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
-        tail = self._process_decoder.decode(b"", final=True)
+        tail = self._output_buffer + self._process_decoder.decode(b"", final=True)
+        self._output_buffer = ""
         if tail:
             for line in tail.splitlines():
                 self.append_log(line)
@@ -776,10 +985,18 @@ class WiFiDropWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.open_button.setEnabled(False)
         self.site_status.setText("Сервер остановлен")
+        self.current_url = None
+        self.domain_status.setText("—")
+        self.qr_box.setVisible(False)
+        self.mode_input.setEnabled(True)
         self.refresh_network_state()
+        if self._close_requested:
+            QTimer.singleShot(0, self.close)
 
     def _process_error(self, error: QProcess.ProcessError) -> None:
         self.append_log(f"[GUI] Ошибка процесса: {error.name}")
+        if error == QProcess.ProcessError.FailedToStart:
+            self._process_finished(-1, QProcess.ExitStatus.CrashExit)
 
     def _set_hotspot_password_visible(self, visible: bool) -> None:
         mode = QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password
@@ -787,6 +1004,11 @@ class WiFiDropWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.timer.stop()
+        if self.settings.connection_mode == "router" and self.process_is_running():
+            self._close_requested = True
+            self.stop_server()
+            event.ignore()
+            return
         if self.dns_server is not None:
             self.dns_server.stop()
             self.dns_server = None
