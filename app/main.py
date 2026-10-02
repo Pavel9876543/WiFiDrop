@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,6 +10,7 @@ from app.api.error_handlers import register_exception_handlers
 from app.api.router import router
 from app.config.settings import PROJECT_ROOT, get_settings
 from app.core.logging import configure_logging
+from app.services.router_access import RouterAccess
 from app.services.upload_cleanup import remove_orphaned_uploads
 from app.services.upload_gate import UploadCapacityMiddleware
 
@@ -27,9 +29,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.port,
         settings.upload_dir,
     )
+    access = RouterAccess(settings) if settings.connection_mode == "router" else None
     try:
+        if access is not None:
+            await asyncio.to_thread(access.start)
         yield
     finally:
+        if access is not None:
+            await asyncio.to_thread(access.close)
         logger.info("%s stopped", settings.app_name)
         logging.shutdown()
 

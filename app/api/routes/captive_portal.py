@@ -13,7 +13,7 @@ router = APIRouter(include_in_schema=False)
 
 def _enabled() -> bool:
     settings = get_settings()
-    return settings.captive_portal_enabled or settings.hotspot_enabled
+    return settings.captive_enabled
 
 
 def _portal_url(request: Request) -> str:
