@@ -4,6 +4,8 @@ from app.utils.network import get_local_ipv4_addresses
 
 
 def test_local_addresses_exclude_loopback(monkeypatch) -> None:
+    monkeypatch.setattr("psutil.net_if_addrs", lambda: {})
+    monkeypatch.setattr("psutil.net_if_stats", lambda: {})
     monkeypatch.setattr(
         socket,
         "getaddrinfo",
