@@ -422,8 +422,9 @@ class WiFiDropWindow(QMainWindow):
                        self.hotspot_password_input, self.show_hotspot_password_input,
                        self.hotspot_gateway_input):
             widget.setEnabled(not router)
-        for widget in (self.router_ip_input, self.local_domain_input, self.local_domain_method_input):
-            widget.setEnabled(router)
+        self.router_ip_input.setEnabled(router)
+        self.local_domain_input.setEnabled(True)
+        self.local_domain_method_input.setEnabled(True)
 
     def _mode_changed(self) -> None:
         try:
@@ -533,9 +534,11 @@ class WiFiDropWindow(QMainWindow):
 
         self.hotspot_status.setText("Работает")
         self.adapter_status.setText(f"{info.adapter_name} — {info.ipv4}")
-        self.current_url = f"http://{info.ipv4}:{self.settings.port}/"
+        ip_url = f"http://{info.ipv4}:{self.settings.port}/"
+        if not self.process_is_running() or not self.current_url:
+            self.current_url = ip_url
         if self.process_is_running():
-            self.site_status.setText(self.current_url)
+            self.site_status.setText(ip_url)
             self.open_button.setEnabled(True)
 
         if not self.settings.captive_portal_enabled:
@@ -698,7 +701,12 @@ class WiFiDropWindow(QMainWindow):
 
             firewall_message: str | None = None
             if os.name == "nt":
-                if ensure_firewall_rules_with_elevation(self.settings.port):
+                if ensure_firewall_rules_with_elevation(
+                    self.settings.port,
+                    mdns=bool(
+                        self.settings.local_domain and self.settings.local_domain_method == "mdns"
+                    ),
+                ):
                     firewall_message = "[GUI] Правила Windows Firewall для WiFiDrop готовы."
                 else:
                     firewall_message = (
@@ -828,6 +836,8 @@ class WiFiDropWindow(QMainWindow):
 
         env = QProcessEnvironment.systemEnvironment()
         env.insert("CONNECTION_MODE", "hotspot")
+        env.insert("WIFIDROP_ACCESS_IP", info.ipv4)
+        env.insert("WIFIDROP_GUI_CONTROL", "1")
         env.insert("PYTHONUNBUFFERED", "1")
         env.insert("HOTSPOT_ENABLED", "false")
         env.insert("CAPTIVE_PORTAL_ENABLED", "true" if self.settings.captive_portal_enabled else "false")
@@ -840,6 +850,7 @@ class WiFiDropWindow(QMainWindow):
         self.process.setProcessEnvironment(env)
         self.process.setWorkingDirectory(str(PROJECT_ROOT))
         self._process_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._output_buffer = ""
         self.append_log("[GUI] Запуск WiFiDrop для мобильного хот-спота Windows...")
         self.append_log(f"[GUI] Обнаружен адаптер: {info.adapter_name}, IP: {info.ipv4}")
         self.process.start(sys.executable, ["-X", "utf8", str(PROJECT_ROOT / "start.py")])
@@ -929,13 +940,9 @@ class WiFiDropWindow(QMainWindow):
             self.dhcp_server.stop()
             self.dhcp_server = None
             self.dhcp_thread = None
-        self._stop_auto_created_hotspot()
-        if self.settings.connection_mode == "router":
-            # Console processes on Windows do not handle QProcess.terminate().
-            # Ask Uvicorn to shut down via its private stdin pipe, including mDNS cleanup.
-            self.process.write(b"stop\n")
-        else:
-            self.process.terminate()
+        # Console processes on Windows do not handle QProcess.terminate().
+        # Ask Uvicorn to shut down via its private stdin pipe, including mDNS cleanup.
+        self.process.write(b"stop\n")
         # Never block the Qt event loop waiting for a child process. If graceful
         # shutdown takes too long, kill it from a timer callback instead.
         QTimer.singleShot(7000, self._kill_process_if_needed)
@@ -1004,7 +1011,7 @@ class WiFiDropWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.timer.stop()
-        if self.settings.connection_mode == "router" and self.process_is_running():
+        if self.process_is_running():
             self._close_requested = True
             self.stop_server()
             event.ignore()

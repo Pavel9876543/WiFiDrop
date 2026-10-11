@@ -23,9 +23,8 @@ def _run_captive_listener(host: str, port: int, log_level: str) -> None:
     )
 
 
-def run_router(settings: Settings) -> None:
-    """Run only the HTTP server and optional local name advertisement."""
-    print("[WiFiDrop] Через роутер: подключите устройства к той же локальной сети.", flush=True)
+def run_http_server(settings: Settings) -> None:
+    """Run HTTP with graceful GUI shutdown, including mDNS cleanup."""
     server = uvicorn.Server(
         uvicorn.Config(
             "app.main:app",
@@ -48,6 +47,11 @@ def run_router(settings: Settings) -> None:
 
         threading.Thread(target=watch_control, name="wifidrop-gui-control", daemon=True).start()
     server.run()
+
+
+def run_router(settings: Settings) -> None:
+    print("[WiFiDrop] Через роутер: подключите устройства к той же локальной сети.", flush=True)
+    run_http_server(settings)
 
 
 def main() -> None:
@@ -127,14 +131,7 @@ def main() -> None:
 
     print("\nPress Ctrl+C to stop the server.\n")
     try:
-        uvicorn.run(
-            "app.main:app",
-            host=settings.host,
-            port=settings.port,
-            log_level=settings.log_level.lower(),
-            access_log=False,
-            workers=1,
-        )
+        run_http_server(settings)
     finally:
         if hotspot:
             print("[WiFiDrop] Stopping hotspot...")

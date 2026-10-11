@@ -1,4 +1,4 @@
-"""Router mode: direct HTTP URL, optional mDNS and a shareable QR image."""
+"""Local HTTP URL, optional mDNS and QR for router and hotspot modes."""
 
 from __future__ import annotations
 
@@ -16,8 +16,10 @@ from zeroconf import IPVersion, ServiceInfo, Zeroconf
 from zeroconf._services.info import AddressResolverIPv4
 
 from app.config.settings import PROJECT_ROOT, Settings
+from app.hotspot.mobile_windows import detect_mobile_hotspot
+from app.hotspot.windows import ensure_firewall_rules_with_elevation
 from app.utils.local_name import domain_hostname
-from app.utils.network import select_router_ip
+from app.utils.network import get_preferred_local_ipv4_address, select_router_ip
 
 ACCESS_PREFIX = "[WiFiDrop] ACCESS "
 QR_PATH = PROJECT_ROOT / "wifidrop_qr.png"
@@ -41,7 +43,35 @@ class RouterAccess:
         self.service: ServiceInfo | None = None
 
     def start(self) -> dict[str, str]:
-        ip = select_router_ip(self.settings.router_ip, self.settings.host)
+        if self.settings.connection_mode == "router":
+            ip = select_router_ip(self.settings.router_ip, self.settings.host)
+        else:
+            ip = self.settings.access_ip
+            if not ip:
+                if self.settings.hotspot_enabled:
+                    ip = self.settings.hotspot_gateway_ip
+                else:
+                    info = detect_mobile_hotspot()
+                    ip = info.ipv4 if info else get_preferred_local_ipv4_address()
+            ip = select_router_ip(ip, self.settings.host)
+        if os.name == "nt":
+            try:
+                ready = ensure_firewall_rules_with_elevation(
+                    self.settings.port,
+                    access_only=True,
+                    mdns=bool(
+                        self.settings.local_domain and self.settings.local_domain_method == "mdns"
+                    ),
+                )
+            except OSError as exc:
+                ready = False
+                print(f"[WiFiDrop] Ошибка настройки брандмауэра: {exc}", flush=True)
+            if not ready:
+                print(
+                    "[WiFiDrop] Не удалось разрешить HTTP/mDNS в брандмауэре Windows. "
+                    "Доступ с других устройств может быть заблокирован.",
+                    flush=True,
+                )
         ip_url = f"http://{ip}:{self.settings.port}/"
         domain_url = ""
         if self.settings.local_domain:

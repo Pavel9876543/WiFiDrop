@@ -109,15 +109,28 @@ def configure_adapter(adapter_name: str, gateway_ip: str) -> None:
 
 
 _FIREWALL_RULES = (
-    ("TCP", "{app_port}", "WiFiDrop App"),
+    ("TCP", "{app_port}", "WiFiDrop App {app_port}"),
     ("TCP", "80", "WiFiDrop Captive HTTP"),
     ("UDP", "53", "WiFiDrop Captive DNS"),
     ("UDP", "67", "WiFiDrop DHCP"),
 )
 
 
-def firewall_rules_present(app_port: int) -> bool:
-    for _protocol, _port, name in _FIREWALL_RULES:
+def _firewall_rules(app_port: int, *, access_only: bool = False, mdns: bool = False):
+    rules = _FIREWALL_RULES[:1] if access_only else _FIREWALL_RULES
+    result = [
+        (protocol, port.format(app_port=app_port), name.format(app_port=app_port))
+        for protocol, port, name in rules
+    ]
+    if mdns:
+        result.append(("UDP", "5353", "WiFiDrop mDNS"))
+    return result
+
+
+def firewall_rules_present(
+    app_port: int, *, access_only: bool = False, mdns: bool = False
+) -> bool:
+    for _protocol, _port, name in _firewall_rules(app_port, access_only=access_only, mdns=mdns):
         result = _run(["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"], check=False)
         if result.returncode != 0:
             return False
@@ -127,13 +140,19 @@ def firewall_rules_present(app_port: int) -> bool:
     return True
 
 
-def ensure_firewall_rules(app_port: int) -> None:
-    for protocol, raw_port, name in _FIREWALL_RULES:
-        port = raw_port.format(app_port=app_port)
+def ensure_firewall_rules(
+    app_port: int, *, access_only: bool = False, mdns: bool = False
+) -> None:
+    for protocol, port, name in _firewall_rules(app_port, access_only=access_only, mdns=mdns):
+        present = _run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"], check=False
+        )
+        if present.returncode == 0 and name.casefold() in present.stdout.casefold():
+            continue
         result = _run([
             "netsh", "advfirewall", "firewall", "add", "rule", f"name={name}", "dir=in", "action=allow",
             f"protocol={protocol}", f"localport={port}", "profile=private,public"
-        ], check=False)
+        ] + (["remoteip=localsubnet"] if port == "5353" else []), check=False)
         if result.returncode != 0:
             raise PermissionError(result.stderr.strip() or result.stdout.strip() or f"Unable to add firewall rule: {name}")
 
@@ -144,16 +163,23 @@ def _pythonw_executable() -> str:
     return str(pythonw if pythonw.exists() else executable)
 
 
-def ensure_firewall_rules_with_elevation(app_port: int, timeout: float = 30.0) -> bool:
+def ensure_firewall_rules_with_elevation(
+    app_port: int, timeout: float = 30.0, *, access_only: bool = False, mdns: bool = False
+) -> bool:
     """Ensure firewall rules, requesting UAC only when the rules are absent."""
-    if os.name != "nt" or firewall_rules_present(app_port):
+    options = {"access_only": access_only, "mdns": mdns}
+    if os.name != "nt" or firewall_rules_present(app_port, **options):
         return True
     if is_windows_admin():
-        ensure_firewall_rules(app_port)
-        return firewall_rules_present(app_port)
+        ensure_firewall_rules(app_port, **options)
+        return firewall_rules_present(app_port, **options)
 
     marker = Path(tempfile.gettempdir()) / f"wifidrop_firewall_{os.getpid()}_{int(time.time() * 1000)}.txt"
     params = f'-X utf8 -m app.firewall_helper --port {int(app_port)} --marker "{marker}"'
+    if access_only:
+        params += " --access-only"
+    if mdns:
+        params += " --mdns"
     result = ctypes.windll.shell32.ShellExecuteW(
         None,
         "runas",
@@ -171,7 +197,7 @@ def ensure_firewall_rules_with_elevation(app_port: int, timeout: float = 30.0) -
             if marker.exists():
                 return marker.read_text(encoding="utf-8", errors="replace").strip() == "ok"
             time.sleep(0.15)
-        return firewall_rules_present(app_port)
+        return firewall_rules_present(app_port, **options)
     finally:
         marker.unlink(missing_ok=True)
 

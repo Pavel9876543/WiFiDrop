@@ -103,3 +103,27 @@ def test_split_output_line_renders_qr(monkeypatch, window, tmp_path):
     assert window.domain_status.text() == url
     assert not window.qr_image.pixmap().isNull()
     assert str(path) in window.qr_description.text()
+
+
+def test_hotspot_refresh_preserves_domain_and_enables_name_settings(monkeypatch, window):
+    from app.hotspot.mobile_windows import MobileHotspotInfo
+
+    window.settings = Settings(_env_file=None, connection_mode="hotspot")
+    window._update_mode_controls()
+    assert window.local_domain_input.isEnabled()
+    assert window.local_domain_method_input.isEnabled()
+    assert not window.router_ip_input.isEnabled()
+    monkeypatch.setattr(window, "process_is_running", lambda: True)
+    window.current_url = "http://otrozhka.local:8000/"
+    info = MobileHotspotInfo("Hotspot", "Hotspot", "192.168.137.1")
+    window._apply_network_snapshot(gui.NetworkSnapshot(info, False))
+    assert window.current_url == "http://otrozhka.local:8000/"
+    assert window.site_status.text() == "http://192.168.137.1:8000/"
+    write = Mock()
+    terminate = Mock()
+    monkeypatch.setattr(window.process, "write", write)
+    monkeypatch.setattr(window.process, "terminate", terminate)
+    window.stop_server()
+    write.assert_called_once_with(b"stop\n")
+    terminate.assert_not_called()
+    monkeypatch.setattr(window, "process_is_running", lambda: False)

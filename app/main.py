@@ -29,7 +29,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.port,
         settings.upload_dir,
     )
-    access = RouterAccess(settings) if settings.connection_mode == "router" else None
+    access = (
+        RouterAccess(settings)
+        if settings.connection_mode == "router" or settings.local_domain
+        else None
+    )
     try:
         if access is not None:
             await asyncio.to_thread(access.start)

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     captive_portal_public_url: str | None = None
     connection_mode: Literal["hotspot", "router"] = "hotspot"
     router_ip: str | None = None
+    # Адрес найденного GUI адаптера; не зависит от включения Captive Portal.
+    access_ip: str | None = Field(default=None, validation_alias="WIFIDROP_ACCESS_IP")
     local_domain: str | None = None
     local_domain_method: Literal["mdns", "router_dns"] = "mdns"
     hotspot_enabled: bool = False
@@ -44,7 +46,7 @@ class Settings(BaseSettings):
     hotspot_password: str = "12347890"
     hotspot_gateway_ip: str = "192.168.50.1"
 
-    @field_validator("router_ip")
+    @field_validator("router_ip", "access_ip")
     @classmethod
     def validate_router_ip(cls, value: str | None) -> str | None:
         import ipaddress
