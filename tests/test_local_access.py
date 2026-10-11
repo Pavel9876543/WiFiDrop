@@ -23,7 +23,8 @@ def test_hotspot_name_uses_gui_adapter_without_captive(monkeypatch):
         router_access, "select_router_ip", lambda ip, host: selected.append((ip, host)) or ip
     )
     monkeypatch.setattr(router_access, "detect_mobile_hotspot", Mock(side_effect=AssertionError))
-    monkeypatch.setattr(router_access, "save_qr", Mock())
+    save = Mock()
+    monkeypatch.setattr(router_access, "save_qr", save)
     access = router_access.RouterAccess(settings)
     announce = Mock()
     monkeypatch.setattr(access, "_announce", announce)
@@ -32,6 +33,7 @@ def test_hotspot_name_uses_gui_adapter_without_captive(monkeypatch):
     announce.assert_called_once_with("xn--80almoaln.local", "192.168.137.1")
     assert payload["url"] == "http://xn--80almoaln.local:8000/"
     assert payload["ip_url"] == "http://192.168.137.1:8000/"
+    save.assert_called_once_with(payload["ip_url"])
 
 
 def test_cli_isolated_hotspot_uses_gateway(monkeypatch):

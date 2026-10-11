@@ -84,10 +84,11 @@ def test_split_output_line_renders_qr(monkeypatch, window, tmp_path):
     from app.services.router_access import save_qr
 
     url = "http://otrozhka.local:8000/"
+    ip_url = "http://192.168.1.20:8000/"
     path = tmp_path / "qr.png"
-    save_qr(url, path)
+    save_qr(ip_url, path)
     payload = {
-        "ip_url": "http://192.168.1.20:8000/",
+        "ip_url": ip_url,
         "domain_url": url,
         "url": url,
         "qr_path": str(path),
@@ -103,6 +104,8 @@ def test_split_output_line_renders_qr(monkeypatch, window, tmp_path):
     assert window.domain_status.text() == url
     assert not window.qr_image.pixmap().isNull()
     assert str(path) in window.qr_description.text()
+    assert window.qr_description.text().startswith(ip_url + "\n")
+    assert url not in window.qr_description.text()
 
 
 def test_hotspot_refresh_preserves_domain_and_enables_name_settings(monkeypatch, window):

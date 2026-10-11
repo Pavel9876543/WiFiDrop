@@ -909,7 +909,7 @@ class WiFiDropWindow(QMainWindow):
             self.qr_image.setPixmap(pixmap.scaled(
                 200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
             ))
-            self.qr_description.setText(f"{self.current_url}\n\nQR сохранён: {path}")
+            self.qr_description.setText(f"{payload['ip_url']}\n\nQR сохранён: {path}")
             self.qr_box.setVisible(not pixmap.isNull())
         else:
             self.qr_box.setVisible(False)

@@ -149,7 +149,7 @@ def test_qr_uses_ip_without_name(access_environment):
     assert saved == ["http://192.168.1.20:8123/"]
 
 
-def test_qr_uses_advertised_name_and_cleanup(monkeypatch, access_environment):
+def test_qr_uses_ip_while_advertising_name_and_cleanup(monkeypatch, access_environment):
     instances = []
 
     class FakeZeroconf:
@@ -177,7 +177,8 @@ def test_qr_uses_advertised_name_and_cleanup(monkeypatch, access_environment):
     access = router_access.RouterAccess(router_settings(local_domain="Отрожка"))
     payload = access.start()
     assert payload["url"] == "http://xn--80almoaln.local:8000/"
-    assert access_environment[1] == [payload["url"]]
+    assert access_environment[1] == [payload["ip_url"]]
+    assert payload["domain_url"] == payload["url"]
     assert instances[0].kwargs["interfaces"] == ["192.168.1.20"]
     assert instances[0].registered.server == "xn--80almoaln.local."
     access.close()
@@ -207,6 +208,7 @@ def test_router_dns_name_is_verified(monkeypatch, access_environment, ip):
     ).start()
     expected = "http://otrozhka:8000/" if ip.endswith(".20") else "http://192.168.1.20:8000/"
     assert payload["url"] == expected
+    assert access_environment[1] == ["http://192.168.1.20:8000/"]
 
 
 def test_qr_failure_does_not_advertise_previous_image(monkeypatch, access_environment):

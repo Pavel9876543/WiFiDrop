@@ -86,7 +86,7 @@ class RouterAccess:
                     self.close()
                     print(f"[WiFiDrop] mDNS недоступен: {exc}. Используется IP-адрес.", flush=True)
             else:
-                # Never advertise an unverified router DNS name in the QR.
+                # Never present an unverified router DNS name as available.
                 try:
                     addresses = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
                     if {item[4][0] for item in addresses} != {ip}:
@@ -100,7 +100,7 @@ class RouterAccess:
         url = domain_url or ip_url
         qr_path = ""
         try:
-            save_qr(url)
+            save_qr(ip_url)
             qr_path = str(QR_PATH)
         except OSError as exc:
             # Remove an old QR so it cannot silently point to another session.
