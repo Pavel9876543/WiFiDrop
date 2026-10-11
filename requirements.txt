@@ -12,3 +12,5 @@ psutil>=6.0,<8
 qrcode[pil]>=8,<9
 zeroconf>=0.148,<1
 idna>=3.10,<4
+httpx>=0.28,<1
+dnspython>=2.7,<3

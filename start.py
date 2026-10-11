@@ -29,7 +29,7 @@ def run_http_server(settings: Settings) -> None:
         uvicorn.Config(
             "app.main:app",
             host=settings.host,
-            port=settings.port,
+            port=settings.effective_port,
             log_level=settings.log_level.lower(),
             access_log=False,
             workers=1,

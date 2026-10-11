@@ -176,9 +176,9 @@ def test_qr_uses_ip_while_advertising_name_and_cleanup(monkeypatch, access_envir
     monkeypatch.setattr(router_access, "Zeroconf", FakeZeroconf)
     access = router_access.RouterAccess(router_settings(local_domain="Отрожка"))
     payload = access.start()
-    assert payload["url"] == "http://xn--80almoaln.local:8000/"
+    assert payload["url"] == payload["ip_url"]
     assert access_environment[1] == [payload["ip_url"]]
-    assert payload["domain_url"] == payload["url"]
+    assert payload["domain_url"] == "http://xn--80almoaln.local:8000/"
     assert instances[0].kwargs["interfaces"] == ["192.168.1.20"]
     assert instances[0].registered.server == "xn--80almoaln.local."
     access.close()
@@ -197,15 +197,22 @@ def test_name_failure_falls_back_to_ip(monkeypatch, access_environment):
 
 @pytest.mark.parametrize("ip", ["192.168.1.20", "192.168.1.99"])
 def test_router_dns_name_is_verified(monkeypatch, access_environment, ip):
+    from app.services import access_diagnostics
+
     monkeypatch.setattr(
-        socket, "getaddrinfo", lambda *_args, **_kwargs: [(socket.AF_INET, 1, 6, "", (ip, 0))]
+        access_diagnostics, "resolve_router_name", lambda *_: {ip}
     )
-    payload = router_access.RouterAccess(
+    monkeypatch.setattr(router_access, "check_http", lambda *_: None)
+    monkeypatch.setattr(access_diagnostics, "check_http", lambda *_: None)
+    access = router_access.RouterAccess(
         router_settings(
             local_domain="otrozhka",
             local_domain_method="router_dns",
         )
-    ).start()
+    )
+    payload = access.start()
+    assert payload["url"] == payload["ip_url"]
+    access.verify()
     expected = "http://otrozhka:8000/" if ip.endswith(".20") else "http://192.168.1.20:8000/"
     assert payload["url"] == expected
     assert access_environment[1] == ["http://192.168.1.20:8000/"]

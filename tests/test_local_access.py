@@ -31,7 +31,8 @@ def test_hotspot_name_uses_gui_adapter_without_captive(monkeypatch):
     payload = access.start()
     assert selected == [("192.168.137.1", "0.0.0.0")]
     announce.assert_called_once_with("xn--80almoaln.local", "192.168.137.1")
-    assert payload["url"] == "http://xn--80almoaln.local:8000/"
+    assert payload["url"] == payload["ip_url"]  # До проверки домен не выбран для открытия.
+    assert payload["domain_url"] == "http://xn--80almoaln.local:8000/"
     assert payload["ip_url"] == "http://192.168.137.1:8000/"
     save.assert_called_once_with(payload["ip_url"])
 

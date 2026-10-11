@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -26,7 +26,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         "%s started on %s:%s; upload directory: %s",
         settings.app_name,
         settings.host,
-        settings.port,
+        settings.effective_port,
         settings.upload_dir,
     )
     access = (
@@ -34,13 +34,24 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if settings.connection_mode == "router" or settings.local_domain
         else None
     )
+    verification = None
     try:
         if access is not None:
             await asyncio.to_thread(access.start)
+
+            async def verify_after_start():
+                await asyncio.sleep(0.3)
+                await asyncio.to_thread(access.verify)
+
+            verification = asyncio.create_task(verify_after_start())
         yield
     finally:
         if access is not None:
             await asyncio.to_thread(access.close)
+        if verification is not None:
+            verification.cancel()
+            with suppress(asyncio.CancelledError):
+                await verification
         logger.info("%s stopped", settings.app_name)
         logging.shutdown()
 

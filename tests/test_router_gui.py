@@ -130,3 +130,57 @@ def test_hotspot_refresh_preserves_domain_and_enables_name_settings(monkeypatch,
     write.assert_called_once_with(b"stop\n")
     terminate.assert_not_called()
     monkeypatch.setattr(window, "process_is_running", lambda: False)
+
+
+def test_dns_setting_requires_confirmed_api_and_invalidates_on_endpoint_change(monkeypatch, window):
+    from app.services.router_config import RouterCapability
+
+    assert not window.router_dns_input.isEnabled()
+    window.router_api_input.setText("https://192.168.1.1")
+    monkeypatch.setattr(window, "_start_worker", lambda function, success, *_: success(function()))
+    monkeypatch.setattr(gui, "probe_router", lambda *_: RouterCapability(False, "Unsupported API"))
+    window._probe_router()
+    assert not window.router_dns_input.isEnabled()
+    monkeypatch.setattr(gui, "probe_router", lambda *_: RouterCapability(True, "API supported"))
+    window._probe_router()
+    assert window.router_dns_input.isEnabled()
+    window.local_domain_input.setText("otrozhka.local")
+    window.router_dns_input.setChecked(True)
+    assert window.local_domain_input.text() == "otrozhka"
+    assert window.local_domain_method_input.currentData() == "router_dns"
+    assert window.router_apply_button.isEnabled()
+    window.router_api_input.setText("https://192.168.2.1")
+    assert not window.router_dns_input.isEnabled()
+    assert not window.router_apply_button.isEnabled()
+
+
+def test_portless_setting_is_independent_of_router_api(monkeypatch, window):
+    monkeypatch.setattr(window, "_start_worker", lambda function, success, *_: success(function()))
+    monkeypatch.setattr(window, "_tcp_port_available", lambda *_: False)
+    window._check_port80()
+    assert not window.http_without_port_input.isEnabled()
+    monkeypatch.setattr(window, "_tcp_port_available", lambda *_: True)
+    window._check_port80()
+    assert window.http_without_port_input.isEnabled()
+    assert not window.router_dns_input.isEnabled()
+    window.http_without_port_input.setChecked(True)
+    assert not window.port_input.isEnabled()
+    window.host_input.setText("192.168.1.20")
+    # Даже если занятый порт сохранён, его можно отключить и вернуться к прежнему порту.
+    assert window.http_without_port_input.isEnabled()
+    window.http_without_port_input.setChecked(False)
+    assert window.port_input.isEnabled()
+
+
+def test_router_launch_checks_actual_port_80(monkeypatch, window):
+    window.settings = window.settings.model_copy(update={"http_without_port": True})
+    monkeypatch.setattr(gui, "select_router_ip", lambda *_: "192.168.1.20")
+    ports = []
+    monkeypatch.setattr(
+        window, "_tcp_port_available", lambda host, port: ports.append(port) or True
+    )
+    monkeypatch.setattr(window, "_start_worker", lambda function, success, *_: success(function()))
+    monkeypatch.setattr(window.process, "start", Mock())
+    window._start_router_server()
+    assert ports == [80]
+    assert window.process.processEnvironment().value("HTTP_WITHOUT_PORT") == "true"

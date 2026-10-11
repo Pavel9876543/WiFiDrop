@@ -53,8 +53,17 @@ from app.hotspot.windows import (
     ensure_hosted_network_with_elevation,
     stop_hosted_network_with_elevation,
 )
+from app.services.access_diagnostics import diagnose_access
 from app.services.router_access import ACCESS_PREFIX
+from app.services.router_config import (
+    RouterCapability,
+    RouterConnection,
+    configure_router_dns,
+    probe_router,
+)
+from app.utils.local_name import domain_hostname
 from app.utils.network import get_router_interfaces, select_router_ip
+from app.utils.router_url import http_url
 
 
 class NoWheelSpinBox(QSpinBox):
@@ -108,6 +117,9 @@ class WiFiDropWindow(QMainWindow):
         self.thread_pool = QThreadPool.globalInstance()
         self._network_refresh_running = False
         self._start_preflight_running = False
+        self._router_capability: RouterCapability | None = None
+        self._router_busy = False
+        self._port80_available = False
 
         self.process = QProcess(self)
         self._process_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -174,6 +186,9 @@ class WiFiDropWindow(QMainWindow):
         self.start_button = QPushButton("Запустить WiFiDrop")
         self.stop_button = QPushButton("Остановить")
         self.open_button = QPushButton("Открыть сайт")
+        self.diagnose_button = QPushButton("Проверить соединение")
+        self.diagnose_button.setEnabled(False)
+        self.diagnose_button.clicked.connect(self._diagnose_connection)
         self.settings_button = QPushButton("Настройки хот-спота Windows")
         self.app_settings_button = QPushButton("Настройки WiFiDrop")
         self.instructions_button = QPushButton("Инструкции")
@@ -195,6 +210,7 @@ class WiFiDropWindow(QMainWindow):
         ):
             buttons.addWidget(button)
         layout.addLayout(buttons)
+        layout.addWidget(self.diagnose_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         settings_box = QGroupBox("Настройки WiFiDrop (.env)")
         settings_layout = QGridLayout(settings_box)
@@ -239,13 +255,63 @@ class WiFiDropWindow(QMainWindow):
         self.show_hotspot_password_input.toggled.connect(self._set_hotspot_password_visible)
         self.hotspot_gateway_input = QLineEdit()
 
+        router_box = QGroupBox("Две независимые настройки доступа через роутер")
+        router_layout = QGridLayout(router_box)
+        self.router_api_input = QLineEdit()
+        self.router_api_input.setPlaceholderText("https://192.168.1.1 — адрес роутера, не компьютера")
+        self.router_provider_input = QComboBox()
+        self.router_provider_input.addItem("MikroTik RouterOS 7 REST", "mikrotik")
+        self.router_provider_input.addItem("OpenWrt ubus / dnsmasq", "openwrt")
+        self.router_username_input = QLineEdit("admin")
+        self.router_password_input = QLineEdit()
+        self.router_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.router_skip_tls_input = QCheckBox("Разрешить самоподписанный сертификат роутера")
+        self.router_probe_button = QPushButton("Проверить поддержку роутером")
+        self.router_probe_button.clicked.connect(self._probe_router)
+        self.router_dns_input = QCheckBox("1. Настроить имя без .local через DNS роутера")
+        self.router_dns_input.setEnabled(False)
+        self.router_dns_input.toggled.connect(self._router_dns_toggled)
+        self.router_apply_button = QPushButton("Применить DNS-имя на роутере")
+        self.router_apply_button.setEnabled(False)
+        self.router_apply_button.clicked.connect(self._configure_router_dns)
+        self.router_support_status = QLabel("Поддержка не проверена. Укажите API и логин роутера.")
+        self.router_support_status.setWordWrap(True)
+        self.router_support_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.http_without_port_input = QCheckBox("2. Открывать сайт без порта: HTTP на порту 80")
+        self.http_without_port_input.setEnabled(False)
+        self.http_without_port_input.toggled.connect(self._portless_toggled)
+        self.port80_check_button = QPushButton("Проверить порт 80 на компьютере")
+        self.port80_check_button.clicked.connect(self._check_port80)
+        self.port80_status = QLabel("Не проверен. Зависит от компьютера; API роутера не нужен.")
+        self.port80_status.setWordWrap(True)
+        for row, (label, widget) in enumerate((
+            ("Адрес API роутера:", self.router_api_input),
+            ("Тип API:", self.router_provider_input),
+            ("Логин (только на эту сессию):", self.router_username_input),
+            ("Пароль (не сохраняется):", self.router_password_input),
+        )):
+            router_layout.addWidget(QLabel(label), row, 0)
+            router_layout.addWidget(widget, row, 1)
+        for row, widget in enumerate((
+            self.router_skip_tls_input, self.router_probe_button, self.router_support_status,
+            self.router_dns_input, self.router_apply_button, self.http_without_port_input,
+            self.port80_check_button, self.port80_status,
+        ), start=4):
+            router_layout.addWidget(widget, row, 0, 1, 2)
+        for widget in (self.router_api_input, self.router_username_input, self.router_password_input):
+            widget.textChanged.connect(self._invalidate_router_support)
+        self.router_provider_input.currentIndexChanged.connect(self._invalidate_router_support)
+        self.router_provider_input.currentIndexChanged.connect(self._router_provider_changed)
+        self.router_skip_tls_input.toggled.connect(self._invalidate_router_support)
+        self.host_input.textChanged.connect(self._invalidate_port80)
+
         settings_rows = [
             ("IP компьютера через роутер:", self.router_ip_input,
              "Выберите Wi-Fi/Ethernet компьютера. Адрес роутера сюда вводить не нужно."),
             ("Локальное доменное имя:", self.local_domain_input,
              "Латиница/кириллица. В mDNS к одному имени добавится .local. Пусто — QR по IP."),
             ("Способ локального имени:", self.local_domain_method_input,
-             "mDNS не меняет роутер. Для DNS роутера запись нужно настроить самостоятельно."),
+             "DNS роутера: вручную или через поддерживаемый API в отдельном блоке ниже."),
             ("Название приложения:", self.app_name_input, "Имя, которое отображается на веб-странице."),
             ("Адрес прослушивания:", self.host_input, "Обычно 0.0.0.0 — принимать подключения со всех сетевых интерфейсов."),
             ("Порт сайта:", self.port_input, "TCP-порт, по которому открывается WiFiDrop."),
@@ -276,18 +342,23 @@ class WiFiDropWindow(QMainWindow):
                 settings_layout.addWidget(widget, row, 1)
         settings_layout.addWidget(self.captive_enabled_input, len(settings_rows), 0, 1, 2)
         settings_layout.addWidget(self.hotspot_enabled_input, len(settings_rows) + 1, 0, 1, 2)
+        settings_layout.addWidget(router_box, len(settings_rows) + 2, 0, 1, 2)
         self.save_settings_button = QPushButton("Сохранить настройки")
         self.save_settings_button.clicked.connect(self.save_settings)
-        settings_layout.addWidget(self.save_settings_button, len(settings_rows) + 2, 1)
+        settings_layout.addWidget(self.save_settings_button, len(settings_rows) + 3, 1)
         settings_layout.setColumnStretch(1, 1)
-        settings_box.setVisible(False)
-        self.app_settings_button.toggled.connect(settings_box.setVisible)
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setMaximumHeight(420)
+        settings_scroll.setWidget(settings_box)
+        settings_scroll.setVisible(False)
+        self.app_settings_button.toggled.connect(settings_scroll.setVisible)
         self.app_settings_button.toggled.connect(
             lambda visible: self.app_settings_button.setText(
                 "Скрыть настройки WiFiDrop" if visible else "Настройки WiFiDrop"
             )
         )
-        layout.addWidget(settings_box)
+        layout.addWidget(settings_scroll)
         self._load_settings_into_form()
 
         log_box = QGroupBox("Журнал")
@@ -326,6 +397,8 @@ class WiFiDropWindow(QMainWindow):
         self.local_domain_method_input.setCurrentIndex(
             self.local_domain_method_input.findData(settings.local_domain_method)
         )
+        self.router_api_input.setText(settings.router_api_url or "")
+        self.http_without_port_input.setChecked(settings.http_without_port)
         self.app_name_input.setText(settings.app_name)
         self.host_input.setText(settings.host)
         self.port_input.setValue(settings.port)
@@ -344,7 +417,7 @@ class WiFiDropWindow(QMainWindow):
         self.hotspot_gateway_input.setText(settings.hotspot_gateway_ip)
 
     def save_settings(self) -> None:
-        if self.process_is_running() or self._start_preflight_running:
+        if self.process_is_running() or self._start_preflight_running or self._router_busy:
             QMessageBox.information(self, "Сервер работает", "Остановите сервер перед изменением настроек.")
             return
         form = {
@@ -352,6 +425,8 @@ class WiFiDropWindow(QMainWindow):
             "router_ip": self.router_ip_input.currentData() or None,
             "local_domain": self.local_domain_input.text().strip() or None,
             "local_domain_method": self.local_domain_method_input.currentData(),
+            "router_api_url": self.router_api_input.text().strip() or None,
+            "http_without_port": self.http_without_port_input.isChecked(),
             "app_name": self.app_name_input.text().strip() or "WiFiDrop",
             "host": self.host_input.text().strip() or "0.0.0.0",
             "port": self.port_input.value(),
@@ -377,6 +452,8 @@ class WiFiDropWindow(QMainWindow):
                 "ROUTER_IP": validated.router_ip or "",
                 "LOCAL_DOMAIN": validated.local_domain or "",
                 "LOCAL_DOMAIN_METHOD": validated.local_domain_method,
+                "ROUTER_API_URL": validated.router_api_url or "",
+                "HTTP_WITHOUT_PORT": validated.http_without_port,
                 "APP_NAME": validated.app_name,
                 "HOST": validated.host,
                 "PORT": validated.port,
@@ -425,6 +502,169 @@ class WiFiDropWindow(QMainWindow):
         self.router_ip_input.setEnabled(router)
         self.local_domain_input.setEnabled(True)
         self.local_domain_method_input.setEnabled(True)
+        self._update_router_controls()
+
+    def _update_router_controls(self) -> None:
+        router = self.settings.connection_mode == "router"
+        idle = not self._router_busy and not self.process_is_running() and not self._start_preflight_running
+        supported = bool(self._router_capability and self._router_capability.supported)
+        for widget in (self.router_api_input, self.router_provider_input, self.router_username_input,
+                       self.router_password_input, self.router_skip_tls_input, self.router_probe_button,
+                       self.port80_check_button):
+            widget.setEnabled(router and idle)
+        self.router_dns_input.setEnabled(router and idle and supported)
+        self.router_apply_button.setEnabled(router and idle and supported and self.router_dns_input.isChecked())
+        self.http_without_port_input.setEnabled(
+            router and idle and (self._port80_available or self.http_without_port_input.isChecked())
+        )
+        self.port_input.setEnabled(not (router and self.http_without_port_input.isChecked()))
+        if self._router_busy:
+            self.start_button.setEnabled(False)
+            self.mode_input.setEnabled(False)
+            self.save_settings_button.setEnabled(False)
+        elif not self.process_is_running() and not self._start_preflight_running:
+            self.start_button.setEnabled(True)
+            self.mode_input.setEnabled(True)
+            self.save_settings_button.setEnabled(True)
+
+    def _invalidate_router_support(self, *_args) -> None:
+        self._router_capability = None
+        self.router_support_status.setText("Поддержка не проверена. Нажмите проверку API роутера.")
+        if hasattr(self, "port80_check_button"):
+            self._update_router_controls()
+
+    def _invalidate_port80(self, *_args) -> None:
+        self._port80_available = False
+        self.port80_status.setText("Адрес прослушивания изменён; проверьте порт 80 заново.")
+        self._update_router_controls()
+
+    def _router_connection(self) -> RouterConnection:
+        return RouterConnection(
+            self.router_api_input.text(), self.router_provider_input.currentData(),
+            self.router_username_input.text().strip(), self.router_password_input.text(),
+            verify_tls=not self.router_skip_tls_input.isChecked(),
+        )
+
+    def _router_provider_changed(self, _index: int) -> None:
+        if self.router_provider_input.currentData() == "openwrt":
+            if self.router_username_input.text() == "admin":
+                self.router_username_input.setText("root")
+        elif self.router_username_input.text() == "root":
+            self.router_username_input.setText("admin")
+
+    def _probe_router(self) -> None:
+        try:
+            connection = self._router_connection()
+        except ValueError as exc:
+            self.router_support_status.setText(str(exc))
+            return
+        self._router_busy = True
+        self.router_support_status.setText("Проверка API и прав DNS…")
+        self._update_router_controls()
+
+        def finished(capability: RouterCapability) -> None:
+            self._router_busy = False
+            self._router_capability = capability
+            self.router_support_status.setText(capability.message)
+            self._update_router_controls()
+
+        def failed(message: str) -> None:
+            finished(RouterCapability(False, message))
+
+        self._start_worker(lambda: probe_router(connection), finished, failed)
+
+    def _router_dns_toggled(self, checked: bool) -> None:
+        if checked:
+            name = self.local_domain_input.text().strip()
+            if name.lower().endswith(".local"):
+                self.local_domain_input.setText(name[:-6])
+            self.local_domain_method_input.setCurrentIndex(
+                self.local_domain_method_input.findData("router_dns")
+            )
+        self._update_router_controls()
+
+    def _configure_router_dns(self) -> None:
+        if not self._router_capability or not self._router_capability.supported:
+            return
+        try:
+            connection = self._router_connection()
+            name = self.local_domain_input.text().strip()
+            domain_hostname(name, "router_dns")
+            ip = select_router_ip(self.router_ip_input.currentData() or None, self.host_input.text())
+        except ValueError as exc:
+            self.router_support_status.setText(str(exc))
+            return
+        self._router_busy = True
+        self._update_router_controls()
+        self.router_support_status.setText(f"Настройка одной DNS-записи: {name} → {ip}…")
+
+        def finished(message: str) -> None:
+            self._router_busy = False
+            self.router_support_status.setText(message)
+            self._update_router_controls()
+            self.append_log(f"[GUI] {message}")
+            try:
+                update_env_file(PROJECT_ROOT / ".env", {
+                    "LOCAL_DOMAIN": name, "LOCAL_DOMAIN_METHOD": "router_dns",
+                    "ROUTER_API_URL": connection.endpoint, "ROUTER_IP": ip,
+                })
+                get_settings.cache_clear()
+                self.settings = get_settings()
+                self.local_domain_method_input.setCurrentIndex(
+                    self.local_domain_method_input.findData("router_dns")
+                )
+            except Exception as exc:
+                self.append_log(f"[GUI] DNS настроен, но настройки приложения не сохранены: {exc}")
+
+        def failed(message: str) -> None:
+            self._router_busy = False
+            self.router_support_status.setText(message)
+            self._update_router_controls()
+
+        self._start_worker(lambda: configure_router_dns(connection, name, ip), finished, failed)
+
+    def _portless_toggled(self, _checked: bool) -> None:
+        self._update_router_controls()
+
+    def _check_port80(self) -> None:
+        host = self.host_input.text().strip() or "0.0.0.0"
+        self.port80_check_button.setEnabled(False)
+
+        def finished(available: bool) -> None:
+            self._port80_available = available
+            self.port80_status.setText(
+                "Порт 80 доступен. Включите настройку и сохраните; порт роутера не меняется."
+                if available else "Порт 80 занят или нет прав на привязку; настройка недоступна."
+            )
+            self._update_router_controls()
+
+        self._start_worker(lambda: self._tcp_port_available(host, 80), finished,
+                           lambda _message: finished(False))
+
+    def _diagnose_connection(self) -> None:
+        ip_url = self.site_status.text()
+        if not ip_url.startswith("http://"):
+            return
+        from urllib.parse import urlsplit
+
+        hostname = (domain_hostname(self.settings.local_domain, self.settings.local_domain_method)
+                    if self.settings.local_domain else None)
+        router_ip = urlsplit(self.settings.router_api_url).hostname if self.settings.router_api_url else None
+        method = self.settings.local_domain_method
+        self.diagnose_button.setEnabled(False)
+
+        def finished(message: str, ok: bool = True) -> None:
+            if not self.process_is_running() or self.site_status.text() != ip_url:
+                return
+            self.diagnose_button.setEnabled(True)
+            self.append_log(f"[GUI] Проверка соединения: {message}")
+            self.domain_status.setText(message)
+            self.current_url = (
+                http_url(hostname, self.settings.effective_port) if ok and hostname else ip_url
+            )
+
+        self._start_worker(lambda: diagnose_access(ip_url, hostname, method, router_ip), finished,
+                           lambda message: finished(message, False))
 
     def _mode_changed(self) -> None:
         try:
@@ -578,9 +818,11 @@ class WiFiDropWindow(QMainWindow):
             "<code>wifidrop_qr.png</code> сохраняется в корне проекта.<br><br>"
             "Имя <code>otrozhka</code> в mDNS станет <code>http://otrozhka.local:8000/</code>; "
             "кириллица поддерживается через IDNA. Доступ зависит от поддержки mDNS клиентом и разрешённого "
-            "multicast в сети. Для имени без .local выберите DNS роутера и заранее создайте в роутере "
-            "запись имени на IP компьютера (лучше закрепить IP). Настройки сети программа не меняет.<br><br>"
-            "Для адреса без :порта установите порт сайта 80, если он свободен. Одно слово в строке браузера "
+            "multicast в сети. Для имени без .local укажите API и логин роутера, проверьте поддержку "
+            "и примените DNS-имя (MikroTik REST / OpenWrt ubus). Если API не поддерживается, "
+            "создайте DNS-запись вручную. Закрепите IP компьютера. QR всегда содержит IP. "
+            "Кнопка «Проверить соединение» проверяет DNS и HTTP на компьютере.<br><br>"
+            "Для адреса без :порта включите отдельный флажок после проверки порта 80. Одно слово в строке браузера "
             "может стать поисковым запросом; надёжнее полный URL или QR. Автоматического окна входа в сеть "
             "в режиме роутера нет. При проблемах с именем используйте IP. Гостевая сеть с изоляцией клиентов "
             "может блокировать доступ. В Windows разрешите Python доступ к частной сети в брандмауэре."
@@ -666,7 +908,7 @@ class WiFiDropWindow(QMainWindow):
         return self.process.state() != QProcess.ProcessState.NotRunning
 
     def start_server(self) -> None:
-        if self.process_is_running() or self._start_preflight_running:
+        if self.process_is_running() or self._start_preflight_running or self._router_busy:
             return
         if self.settings.connection_mode == "router":
             self._start_router_server()
@@ -866,8 +1108,11 @@ class WiFiDropWindow(QMainWindow):
 
         def inspect() -> str:
             ip = select_router_ip(self.settings.router_ip, self.settings.host)
-            if not self._tcp_port_available(self.settings.host, self.settings.port):
-                raise ValueError(f"TCP-порт {self.settings.port} занят")
+            if not self._tcp_port_available(self.settings.host, self.settings.effective_port):
+                raise ValueError(
+                    f"TCP-порт {self.settings.effective_port} занят или недоступен. "
+                    "Если включён адрес без порта, отключите эту настройку или освободите порт 80."
+                )
             return ip
 
         def launch(ip: str) -> None:
@@ -876,6 +1121,7 @@ class WiFiDropWindow(QMainWindow):
             env.insert("CONNECTION_MODE", "router")
             env.insert("WIFIDROP_GUI_CONTROL", "1")
             env.insert("ROUTER_IP", ip)
+            env.insert("HTTP_WITHOUT_PORT", str(self.settings.http_without_port).lower())
             env.insert("HOTSPOT_ENABLED", "false")
             env.insert("CAPTIVE_PORTAL_ENABLED", "false")
             env.insert("PYTHONUNBUFFERED", "1")
@@ -885,15 +1131,17 @@ class WiFiDropWindow(QMainWindow):
             self.process.setWorkingDirectory(str(PROJECT_ROOT))
             self._process_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             self._output_buffer = ""
-            self.append_log(f"[GUI] Запуск через роутер: http://{ip}:{self.settings.port}/")
+            self.append_log(f"[GUI] Запуск через роутер: {http_url(ip, self.settings.effective_port)}")
             self.site_status.setText("Запуск сервера...")
             self.process.start(sys.executable, ["-X", "utf8", str(PROJECT_ROOT / "start.py")])
             self.stop_button.setEnabled(True)
+            self._update_router_controls()
 
         def failed(message: str) -> None:
             self._start_preflight_running = False
             self.start_button.setEnabled(True)
             self.mode_input.setEnabled(True)
+            self._update_router_controls()
             QMessageBox.warning(self, "Не удалось запустить через роутер", message)
 
         self._start_worker(inspect, launch, failed)
@@ -901,8 +1149,12 @@ class WiFiDropWindow(QMainWindow):
     def _show_access(self, payload: dict[str, str]) -> None:
         self.current_url = payload["url"]
         self.site_status.setText(payload["ip_url"])
-        self.domain_status.setText(payload["domain_url"] or "Не задано или недоступно; используйте IP")
+        domain_text = payload["domain_url"] or "Не задано или недоступно; используйте IP"
+        if payload.get("domain_status"):
+            domain_text += "\n" + payload["domain_status"]
+        self.domain_status.setText(domain_text)
         self.open_button.setEnabled(True)
+        self.diagnose_button.setEnabled(True)
         path = payload["qr_path"]
         if path:
             pixmap = QPixmap(path)
@@ -991,11 +1243,13 @@ class WiFiDropWindow(QMainWindow):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.open_button.setEnabled(False)
+        self.diagnose_button.setEnabled(False)
         self.site_status.setText("Сервер остановлен")
         self.current_url = None
         self.domain_status.setText("—")
         self.qr_box.setVisible(False)
         self.mode_input.setEnabled(True)
+        self._update_router_controls()
         self.refresh_network_state()
         if self._close_requested:
             QTimer.singleShot(0, self.close)

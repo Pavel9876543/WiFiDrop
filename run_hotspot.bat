@@ -18,7 +18,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python.exe -c "import qrcode, PIL, zeroconf, idna" >nul 2>&1
+python.exe -c "import qrcode, PIL, zeroconf, idna, httpx, dns" >nul 2>&1
 if errorlevel 1 del ".venv\.wifidrop-ready" >nul 2>&1
 if not exist ".venv\.wifidrop-ready" (
     echo [WiFiDrop] Installing dependencies...

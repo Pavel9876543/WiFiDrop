@@ -8,7 +8,9 @@ import json
 import os
 import socket
 import tempfile
+import threading
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import idna
 import qrcode
@@ -18,8 +20,10 @@ from zeroconf._services.info import AddressResolverIPv4
 from app.config.settings import PROJECT_ROOT, Settings
 from app.hotspot.mobile_windows import detect_mobile_hotspot
 from app.hotspot.windows import ensure_firewall_rules_with_elevation
+from app.services.access_diagnostics import check_http, diagnose_access
 from app.utils.local_name import domain_hostname
 from app.utils.network import get_preferred_local_ipv4_address, select_router_ip
+from app.utils.router_url import http_url
 
 ACCESS_PREFIX = "[WiFiDrop] ACCESS "
 QR_PATH = PROJECT_ROOT / "wifidrop_qr.png"
@@ -41,6 +45,9 @@ class RouterAccess:
         self.settings = settings
         self.zeroconf: Zeroconf | None = None
         self.service: ServiceInfo | None = None
+        self.closed = threading.Event()
+        self.payload: dict[str, str] = {}
+        self.hostname: str | None = None
 
     def start(self) -> dict[str, str]:
         if self.settings.connection_mode == "router":
@@ -57,7 +64,7 @@ class RouterAccess:
         if os.name == "nt":
             try:
                 ready = ensure_firewall_rules_with_elevation(
-                    self.settings.port,
+                    self.settings.effective_port,
                     access_only=True,
                     mdns=bool(
                         self.settings.local_domain and self.settings.local_domain_method == "mdns"
@@ -72,32 +79,24 @@ class RouterAccess:
                     "Доступ с других устройств может быть заблокирован.",
                     flush=True,
                 )
-        ip_url = f"http://{ip}:{self.settings.port}/"
+        ip_url = http_url(ip, self.settings.effective_port)
         domain_url = ""
         if self.settings.local_domain:
             hostname = domain_hostname(
                 self.settings.local_domain, self.settings.local_domain_method
             )
+            self.hostname = hostname
             if self.settings.local_domain_method == "mdns":
                 try:
                     self._announce(hostname, ip)
-                    domain_url = f"http://{hostname}:{self.settings.port}/"
+                    domain_url = http_url(hostname, self.settings.effective_port)
                 except Exception as exc:
-                    self.close()
+                    self._close_mdns()
                     print(f"[WiFiDrop] mDNS недоступен: {exc}. Используется IP-адрес.", flush=True)
             else:
-                # Never present an unverified router DNS name as available.
-                try:
-                    addresses = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
-                    if {item[4][0] for item in addresses} != {ip}:
-                        raise ValueError("DNS-имя не указывает только на выбранный IP компьютера")
-                    domain_url = f"http://{hostname}:{self.settings.port}/"
-                except (OSError, ValueError) as exc:
-                    print(
-                        f"[WiFiDrop] Настройте DNS роутера для {hostname}: {exc}. QR по IP.",
-                        flush=True,
-                    )
-        url = domain_url or ip_url
+                domain_url = http_url(hostname, self.settings.effective_port)
+        # Объявление mDNS не доказывает ни DNS-ответ, ни доступность HTTP.
+        url = ip_url
         qr_path = ""
         try:
             save_qr(ip_url)
@@ -111,13 +110,60 @@ class RouterAccess:
         if self.settings.local_domain:
             display = idna.decode(hostname)
             print(
-                f"[WiFiDrop] Домен: http://{display}:{self.settings.port}/"
-                + ("" if domain_url else " (недоступен; используйте IP)"),
+                f"[WiFiDrop] Домен: {http_url(display, self.settings.effective_port)}"
+                + (" (ожидает проверки)" if domain_url else " (недоступен; используйте IP)"),
                 flush=True,
             )
         payload = {"ip_url": ip_url, "domain_url": domain_url, "url": url, "qr_path": qr_path}
+        if self.settings.local_domain:
+            payload["domain_status"] = "Имя объявлено/задано; DNS и HTTP ещё не проверены"
+        self.payload = payload
         print(ACCESS_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
         return payload
+
+    def verify(self) -> None:
+        """Вызывается после запуска HTTP; до bind проверять соединение нельзя."""
+        if not self.payload or self.closed.is_set():
+            return
+        message = ""
+        for _ in range(8):
+            if self.closed.is_set():
+                return
+            try:
+                check_http(self.payload["ip_url"])
+                break
+            except ValueError as exc:
+                message = str(exc)
+                if self.closed.wait(0.25):
+                    return
+        else:
+            self._verification_result(False, message)
+            return
+        try:
+            router_ip = (
+                urlsplit(self.settings.router_api_url).hostname
+                if self.settings.router_api_url
+                else None
+            )
+            message = diagnose_access(
+                self.payload["ip_url"], self.hostname, self.settings.local_domain_method, router_ip
+            )
+        except (OSError, ValueError) as exc:
+            self._verification_result(False, str(exc))
+        else:
+            self._verification_result(True, message)
+
+    def _verification_result(self, ok: bool, message: str) -> None:
+        if self.closed.is_set():
+            return
+        self.payload["domain_status"] = message
+        if not ok:
+            self.payload["domain_url"] = ""
+        elif self.hostname:
+            self.payload["domain_url"] = http_url(self.hostname, self.settings.effective_port)
+        self.payload["url"] = self.payload["domain_url"] or self.payload["ip_url"]
+        print(f"[WiFiDrop] Проверка соединения: {message}", flush=True)
+        print(ACCESS_PREFIX + json.dumps(self.payload, ensure_ascii=False), flush=True)
 
     def _announce(self, hostname: str, ip: str) -> None:
         self.zeroconf = Zeroconf(interfaces=[ip], ip_version=IPVersion.V4Only)
@@ -131,7 +177,7 @@ class RouterAccess:
             "_http._tcp.local.",
             f"WiFiDrop-{hashlib.sha256(hostname.encode()).hexdigest()[:16]}._http._tcp.local.",
             addresses=[socket.inet_aton(ip)],
-            port=self.settings.port,
+            port=self.settings.effective_port,
             properties={"path": "/"},
             server=hostname + ".",
         )
@@ -139,6 +185,10 @@ class RouterAccess:
         self.service = info
 
     def close(self) -> None:
+        self.closed.set()
+        self._close_mdns()
+
+    def _close_mdns(self) -> None:
         zc, service = self.zeroconf, self.service
         self.zeroconf = None
         self.service = None

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     access_ip: str | None = Field(default=None, validation_alias="WIFIDROP_ACCESS_IP")
     local_domain: str | None = None
     local_domain_method: Literal["mdns", "router_dns"] = "mdns"
+    router_api_url: str | None = None
+    http_without_port: bool = False
     hotspot_enabled: bool = False
     auto_create_hotspot: bool = True
     hotspot_ssid: str = "WiFiDrop"
@@ -74,6 +76,19 @@ class Settings(BaseSettings):
         return self.connection_mode == "hotspot" and (
             self.captive_portal_enabled or self.hotspot_enabled
         )
+
+    @property
+    def effective_port(self) -> int:
+        return 80 if self.connection_mode == "router" and self.http_without_port else self.port
+
+    @field_validator("router_api_url")
+    @classmethod
+    def validate_router_api_url(cls, value: str | None) -> str | None:
+        if not value or not value.strip():
+            return None
+        from app.utils.router_url import normalize_router_url
+
+        return normalize_router_url(value)
 
     @field_validator("log_level")
     @classmethod
