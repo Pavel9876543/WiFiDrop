@@ -70,6 +70,36 @@ def test_hotspot_lifespan_announces_and_releases_name(monkeypatch, tmp_path):
     access.close.assert_called_once()
 
 
+def test_hotspot_without_domain_also_generates_qr(monkeypatch, tmp_path):
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "settings", Settings(
+        _env_file=None, connection_mode="hotspot", local_domain=None,
+        upload_dir=tmp_path / "files", log_dir=tmp_path / "logs",
+    ))
+    access = Mock()
+    monkeypatch.setattr(main_module, "RouterAccess", lambda _: access)
+    with TestClient(main_module.create_app()) as client:
+        assert client.get("/").status_code == 200
+        access.start.assert_called_once()
+    access.close.assert_called_once()
+
+
+def test_hotspot_without_lan_still_serves_localhost(monkeypatch, tmp_path):
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "settings", Settings(
+        _env_file=None, connection_mode="hotspot", local_domain=None,
+        upload_dir=tmp_path / "files", log_dir=tmp_path / "logs",
+    ))
+    access = Mock()
+    access.start.side_effect = ValueError("no network")
+    monkeypatch.setattr(main_module, "RouterAccess", lambda _: access)
+    with TestClient(main_module.create_app()) as client:
+        assert client.get("/api/health").json() == {"status": "ok"}
+    access.close.assert_called_once()
+
+
 def test_router_firewall_opens_only_http_and_mdns(monkeypatch):
     commands = []
 

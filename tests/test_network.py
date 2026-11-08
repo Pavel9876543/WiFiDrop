@@ -1,4 +1,7 @@
 import socket
+from unittest.mock import MagicMock
+
+import pytest
 
 from app.utils.network import get_local_ipv4_addresses
 
@@ -31,3 +34,30 @@ def test_preferred_local_address_uses_route(monkeypatch) -> None:
 
     monkeypatch.setattr(socket, "socket", lambda *_args, **_kwargs: FakeSocket())
     assert get_preferred_local_ipv4_address() == "192.168.50.7"
+
+
+def test_router_ip_uses_route_to_configured_router(monkeypatch):
+    from app.utils import network
+
+    monkeypatch.setattr(network, "get_router_interfaces", lambda: [
+        ("Ethernet", "192.168.2.20"), ("Wi-Fi", "192.168.1.20"),
+    ])
+    sock = MagicMock()
+    sock.__enter__.return_value = sock
+    sock.getsockname.return_value = ("192.168.1.20", 12345)
+    monkeypatch.setattr(socket, "socket", lambda *_: sock)
+    assert network.select_router_ip(None, router_ip="192.168.1.1") == "192.168.1.20"
+    sock.connect.assert_called_once_with(("192.168.1.1", 53))
+    assert network.select_router_ip("192.168.2.20", router_ip="192.168.1.1") == "192.168.2.20"
+
+
+def test_router_route_failure_requires_explicit_address(monkeypatch):
+    from app.utils import network
+
+    monkeypatch.setattr(network, "get_router_interfaces", lambda: [("Wi-Fi", "192.168.1.20")])
+    sock = MagicMock()
+    sock.__enter__.return_value = sock
+    sock.connect.side_effect = OSError("unreachable")
+    monkeypatch.setattr(socket, "socket", lambda *_: sock)
+    with pytest.raises(ValueError, match="Нет маршрута"):
+        network.select_router_ip(None, router_ip="192.168.2.1")

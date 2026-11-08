@@ -130,10 +130,11 @@ class RouterClient:
         try:
             if self.connection.provider == "mikrotik":
                 resources = self._request("GET", "/rest/system/resource")
+                if isinstance(resources, list) and len(resources) == 1:
+                    resources = resources[0]
                 if (
-                    not isinstance(resources, list)
-                    or not resources
-                    or resources[0].get("platform") != "MikroTik"
+                    not isinstance(resources, dict)
+                    or resources.get("platform") != "MikroTik"
                 ):
                     raise RouterConfigError("Этот адрес не предоставляет API MikroTik RouterOS")
                 dns_settings = self._request("GET", "/rest/ip/dns")
@@ -268,7 +269,8 @@ class RouterClient:
             identity = matches[0].get(".id", "")
             if not re.fullmatch(r"\*[0-9A-Fa-f]+", identity):
                 raise RouterConfigError("Неверный идентификатор DNS-записи")
-            self._request("PATCH", "/rest/ip/dns/static/" + quote(identity, safe=""), json=values)
+            # RouterOS expects the literal * in record IDs, not %2A.
+            self._request("PATCH", "/rest/ip/dns/static/" + quote(identity, safe="*"), json=values)
         else:
             self._request("PUT", "/rest/ip/dns/static", json=values)
 

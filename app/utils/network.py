@@ -81,7 +81,9 @@ def get_router_interfaces() -> list[tuple[str, str]]:
     return sorted(set(result), key=rank)
 
 
-def select_router_ip(configured_ip: str | None, host: str = "0.0.0.0") -> str:
+def select_router_ip(
+    configured_ip: str | None, host: str = "0.0.0.0", router_ip: str | None = None
+) -> str:
     interfaces = get_router_interfaces()
     candidates = [ip for _, ip in interfaces]
     if host != "0.0.0.0":
@@ -96,4 +98,17 @@ def select_router_ip(configured_ip: str | None, host: str = "0.0.0.0") -> str:
         return configured_ip
     if not candidates:
         raise ValueError("Локальная сеть не найдена. Подключите компьютер к роутеру")
+    if router_ip:
+        # Query the route to the actual router, rather than choosing an adapter alphabetically.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            try:
+                sock.connect((router_ip, 53))
+                routed_ip = sock.getsockname()[0]
+            except OSError as exc:
+                raise ValueError(
+                    "Нет маршрута к указанному роутеру; выберите IP компьютера"
+                ) from exc
+        if routed_ip not in candidates:
+            raise ValueError("Адаптер для указанного роутера недоступен; выберите IP компьютера")
+        return routed_ip
     return candidates[0]

@@ -154,6 +154,26 @@ def test_dns_setting_requires_confirmed_api_and_invalidates_on_endpoint_change(m
     assert not window.router_apply_button.isEnabled()
 
 
+def test_apply_router_dns_normalizes_name_and_passes_router_to_ip_selection(monkeypatch, window):
+    from app.services.router_config import RouterCapability
+
+    window.router_api_input.setText("https://192.168.1.1")
+    window._router_capability = RouterCapability(True, "supported")
+    window.local_domain_input.setText(" Отрожка ")
+    select_ip = Mock(return_value="192.168.1.20")
+    configure = Mock(return_value="DNS verified")
+    save = Mock()
+    monkeypatch.setattr(gui, "select_router_ip", select_ip)
+    monkeypatch.setattr(gui, "configure_router_dns", configure)
+    monkeypatch.setattr(gui, "update_env_file", save)
+    monkeypatch.setattr(gui, "get_settings", Mock(return_value=window.settings))
+    monkeypatch.setattr(window, "_start_worker", lambda function, success, *_: success(function()))
+    window._configure_router_dns()
+    assert select_ip.call_args.args[-1] == "192.168.1.1"
+    assert configure.call_args.args[1:] == ("отрожка", "192.168.1.20")
+    assert save.call_args.args[1]["LOCAL_DOMAIN"] == "отрожка"
+
+
 def test_portless_setting_is_independent_of_router_api(monkeypatch, window):
     monkeypatch.setattr(window, "_start_worker", lambda function, success, *_: success(function()))
     monkeypatch.setattr(window, "_tcp_port_available", lambda *_: False)
@@ -170,6 +190,45 @@ def test_portless_setting_is_independent_of_router_api(monkeypatch, window):
     assert window.http_without_port_input.isEnabled()
     window.http_without_port_input.setChecked(False)
     assert window.port_input.isEnabled()
+
+
+def test_open_received_files_uses_saved_directory_even_with_unsaved_form(
+    monkeypatch, window, tmp_path
+):
+    path = tmp_path / "Принятые файлы #1" / "Новая папка"
+    window.settings = window.settings.model_copy(update={"upload_dir": path})
+    window.upload_dir_input.setText(str(tmp_path / "unsaved"))
+    opened = Mock(return_value=True)
+    monkeypatch.setattr(gui.QDesktopServices, "openUrl", opened)
+    assert window.files_button.isEnabled()  # Also available while the server is stopped.
+    window.files_button.click()
+    assert path.is_dir()
+    url = opened.call_args.args[0]
+    assert url.isLocalFile()
+    assert url.toLocalFile() == str(path)
+    assert not (tmp_path / "unsaved").exists()
+
+
+def test_open_received_files_reports_missing_file_manager(monkeypatch, window, tmp_path):
+    window.settings = window.settings.model_copy(update={"upload_dir": tmp_path})
+    monkeypatch.setattr(gui.QDesktopServices, "openUrl", lambda _: False)
+    warning = Mock()
+    monkeypatch.setattr(gui.QMessageBox, "warning", warning)
+    window.open_received_files()
+    warning.assert_called_once()
+
+
+def test_open_received_files_reports_path_error(monkeypatch, window, tmp_path):
+    path = tmp_path / "file.txt"
+    path.write_text("not a directory")
+    window.settings = window.settings.model_copy(update={"upload_dir": path})
+    opened = Mock()
+    warning = Mock()
+    monkeypatch.setattr(gui.QDesktopServices, "openUrl", opened)
+    monkeypatch.setattr(gui.QMessageBox, "warning", warning)
+    window.open_received_files()
+    opened.assert_not_called()
+    warning.assert_called_once()
 
 
 def test_router_launch_checks_actual_port_80(monkeypatch, window):

@@ -9,6 +9,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from PyQt6.QtCore import (
     QObject,
@@ -61,7 +62,7 @@ from app.services.router_config import (
     configure_router_dns,
     probe_router,
 )
-from app.utils.local_name import domain_hostname
+from app.utils.local_name import domain_hostname, normalize_local_name
 from app.utils.network import get_router_interfaces, select_router_ip
 from app.utils.router_url import http_url
 
@@ -172,7 +173,9 @@ class WiFiDropWindow(QMainWindow):
         self.qr_box = QGroupBox("QR-код для открытия сайта")
         qr_layout = QHBoxLayout(self.qr_box)
         self.qr_image = QLabel()
-        self.qr_image.setFixedSize(200, 200)
+        self.qr_image.setFixedSize(240, 240)
+        self.qr_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.qr_image.setStyleSheet("background: white;")
         self.qr_description = QLabel()
         self.qr_description.setWordWrap(True)
         self.qr_description.setTextFormat(Qt.TextFormat.PlainText)
@@ -210,7 +213,14 @@ class WiFiDropWindow(QMainWindow):
         ):
             buttons.addWidget(button)
         layout.addLayout(buttons)
-        layout.addWidget(self.diagnose_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        file_actions = QHBoxLayout()
+        self.files_button = QPushButton("Открыть полученные файлы")
+        self.files_button.setToolTip("Открыть папку для файлов, сохранённую в настройках WiFiDrop")
+        self.files_button.clicked.connect(self.open_received_files)
+        file_actions.addWidget(self.files_button)
+        file_actions.addWidget(self.diagnose_button)
+        file_actions.addStretch(1)
+        layout.addLayout(file_actions)
 
         settings_box = QGroupBox("Настройки WiFiDrop (.env)")
         settings_layout = QGridLayout(settings_box)
@@ -588,9 +598,15 @@ class WiFiDropWindow(QMainWindow):
             return
         try:
             connection = self._router_connection()
-            name = self.local_domain_input.text().strip()
+            name = normalize_local_name(self.local_domain_input.text())
+            if not name:
+                raise ValueError("Введите имя сайта")
             domain_hostname(name, "router_dns")
-            ip = select_router_ip(self.router_ip_input.currentData() or None, self.host_input.text())
+            ip = select_router_ip(
+                self.router_ip_input.currentData() or None,
+                self.host_input.text(),
+                connection.router_ip,
+            )
         except ValueError as exc:
             self.router_support_status.setText(str(exc))
             return
@@ -645,8 +661,6 @@ class WiFiDropWindow(QMainWindow):
         ip_url = self.site_status.text()
         if not ip_url.startswith("http://"):
             return
-        from urllib.parse import urlsplit
-
         hostname = (domain_hostname(self.settings.local_domain, self.settings.local_domain_method)
                     if self.settings.local_domain else None)
         router_ip = urlsplit(self.settings.router_api_url).hostname if self.settings.router_api_url else None
@@ -1107,7 +1121,11 @@ class WiFiDropWindow(QMainWindow):
         self.mode_input.setEnabled(False)
 
         def inspect() -> str:
-            ip = select_router_ip(self.settings.router_ip, self.settings.host)
+            router = (
+                urlsplit(self.settings.router_api_url).hostname
+                if self.settings.router_api_url else None
+            )
+            ip = select_router_ip(self.settings.router_ip, self.settings.host, router)
             if not self._tcp_port_available(self.settings.host, self.settings.effective_port):
                 raise ValueError(
                     f"TCP-порт {self.settings.effective_port} занят или недоступен. "
@@ -1158,9 +1176,8 @@ class WiFiDropWindow(QMainWindow):
         path = payload["qr_path"]
         if path:
             pixmap = QPixmap(path)
-            self.qr_image.setPixmap(pixmap.scaled(
-                200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
-            ))
+            # The PNG already fits the label. Resizing to an arbitrary width distorts QR cells.
+            self.qr_image.setPixmap(pixmap)
             self.qr_description.setText(f"{payload['ip_url']}\n\nQR сохранён: {path}")
             self.qr_box.setVisible(not pixmap.isNull())
         else:
@@ -1203,6 +1220,15 @@ class WiFiDropWindow(QMainWindow):
         if self.process_is_running():
             self.append_log("[GUI] Сервер не завершился вовремя — принудительная остановка.")
             self.process.kill()
+
+    def open_received_files(self) -> None:
+        path = self.settings.upload_dir
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+                raise OSError("Системный файловый менеджер не смог открыть папку")
+        except OSError as exc:
+            QMessageBox.warning(self, "Не удалось открыть папку", f"{path}\n\n{exc}")
 
     def open_site(self) -> None:
         if self.current_url:

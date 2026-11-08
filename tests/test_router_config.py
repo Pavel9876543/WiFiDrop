@@ -83,6 +83,21 @@ def test_mikrotik_create_then_update_only_owned_record(monkeypatch):
         client.configure_dns("otrozhka", "192.168.1.20")
         assert entries[0]["address"] == "192.168.1.20"
     assert [r.method for r in requests if r.method != "GET"] == ["PUT", "PATCH"]
+    patch = next(r for r in requests if r.method == "PATCH")
+    assert patch.url.raw_path == b"/rest/ip/dns/static/*1"
+
+
+def test_mikrotik_probe_accepts_singleton_resource_response():
+    requests = []
+    handler = mikrotik_handler([], requests)
+
+    def singleton_handler(request):
+        if request.url.path == "/rest/system/resource":
+            return httpx.Response(200, json={"platform": "MikroTik", "version": "7.21"})
+        return handler(request)
+
+    with make_client("mikrotik", singleton_handler) as client:
+        assert client.probe().supported
 
 
 def test_mikrotik_does_not_replace_foreign_record(monkeypatch):

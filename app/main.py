@@ -29,15 +29,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.effective_port,
         settings.upload_dir,
     )
-    access = (
-        RouterAccess(settings)
-        if settings.connection_mode == "router" or settings.local_domain
-        else None
-    )
+    access = RouterAccess(settings)
     verification = None
     try:
-        if access is not None:
+        try:
             await asyncio.to_thread(access.start)
+        except ValueError:
+            if settings.connection_mode == "router" or settings.local_domain:
+                raise
+            # The HTTP server can still serve localhost while LAN is disconnected.
+            logger.warning("QR недоступен: не найден подходящий сетевой адрес компьютера")
+        else:
 
             async def verify_after_start():
                 await asyncio.sleep(0.3)
@@ -46,8 +48,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             verification = asyncio.create_task(verify_after_start())
         yield
     finally:
-        if access is not None:
-            await asyncio.to_thread(access.close)
+        await asyncio.to_thread(access.close)
         if verification is not None:
             verification.cancel()
             with suppress(asyncio.CancelledError):

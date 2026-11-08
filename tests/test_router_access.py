@@ -227,6 +227,15 @@ def test_qr_failure_does_not_advertise_previous_image(monkeypatch, access_enviro
     assert not path.exists()
 
 
+def test_disconnected_network_removes_previous_session_qr(monkeypatch, access_environment):
+    path, _ = access_environment
+    path.write_bytes(b"old QR")
+    monkeypatch.setattr(router_access, "select_router_ip", Mock(side_effect=ValueError("no LAN")))
+    with pytest.raises(ValueError):
+        router_access.RouterAccess(router_settings()).start()
+    assert not path.exists()
+
+
 def test_save_qr_is_png_and_preserves_previous_file_on_failure(monkeypatch, tmp_path):
     from PIL import Image
 
@@ -237,9 +246,40 @@ def test_save_qr_is_png_and_preserves_previous_file_on_failure(monkeypatch, tmp_
     old = path.read_bytes()
     monkeypatch.setattr(router_access.qrcode, "make", Mock(side_effect=OSError("failed")))
     with pytest.raises(OSError):
-        router_access.save_qr("http://otrozhka.local:8000/", path)
+        router_access.save_qr("http://192.168.1.21:8000/", path)
     assert path.read_bytes() == old
     assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("url", [
+    "http://192.168.1.20:8000/",
+    "http://192.168.100.100:65535/",
+    "http://10.0.0.2/",
+])
+def test_qr_has_integer_cells_and_white_border(monkeypatch, tmp_path, url):
+    from PIL import Image
+
+    path = tmp_path / "qr.png"
+    monkeypatch.setattr(router_access, "QR_PATH", path)
+    router_access.save_qr(url)
+    with Image.open(path) as image:
+        assert image.width == image.height <= 240
+        assert image.width % 6 == 0
+        # Four cells of quiet zone on each side survive native display in the GUI.
+        assert image.convert("L").crop((0, 0, image.width, 24)).getextrema() == (255, 255)
+
+
+@pytest.mark.parametrize("url", [
+    "http://otrozhka.local:8000/", "http://localhost:8000/", "http://0.0.0.0:8000/",
+    "http://127.0.0.1:8000/", "http://169.254.1.2:8000/", "http://224.0.0.1:8000/",
+    "https://192.168.1.20/", "http://192.168.1.20:0/",
+])
+def test_qr_rejects_domain_and_unusable_ip_without_replacing_old_image(tmp_path, url):
+    path = tmp_path / "qr.png"
+    path.write_bytes(b"previous image")
+    with pytest.raises(ValueError):
+        router_access.save_qr(url, path)
+    assert path.read_bytes() == b"previous image"
 
 
 def test_lifespan_releases_name_even_when_start_fails(monkeypatch, tmp_path):

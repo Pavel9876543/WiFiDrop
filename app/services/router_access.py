@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import ipaddress
 import json
 import os
 import socket
@@ -29,12 +30,31 @@ ACCESS_PREFIX = "[WiFiDrop] ACCESS "
 QR_PATH = PROJECT_ROOT / "wifidrop_qr.png"
 
 
-def save_qr(url: str, path: Path = QR_PATH) -> None:
+def save_qr(url: str, path: Path | None = None) -> None:
     """Replace the previous PNG only after the complete new image is written."""
+    address = urlsplit(url)
+    ip = ipaddress.IPv4Address(address.hostname or "")
+    port = address.port if address.port is not None else 80
+    if (
+        ip.is_loopback
+        or ip.is_unspecified
+        or ip.is_multicast
+        or ip.is_link_local
+        or address.scheme != "http"
+        or address.username is not None
+        or address.password is not None
+        or address.path != "/"
+        or address.query
+        or address.fragment
+        or not 1 <= port <= 65535
+    ):
+        raise ValueError("QR должен содержать HTTP-адрес с IPv4 компьютера и портом сайта")
+    path = path if path is not None else QR_PATH
     fd, temporary = tempfile.mkstemp(prefix=".wifidrop_qr.", suffix=".png", dir=path.parent)
     os.close(fd)
     try:
-        qrcode.make(url).save(temporary)
+        # IPv4 HTTP URLs fit into 240 px with six pixels per cell and a white quiet zone.
+        qrcode.make(url, box_size=6, border=4).save(temporary)
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
@@ -50,8 +70,15 @@ class RouterAccess:
         self.hostname: str | None = None
 
     def start(self) -> dict[str, str]:
+        # Never leave a previous session's address on disk when network discovery fails.
+        with contextlib.suppress(OSError):
+            QR_PATH.unlink(missing_ok=True)
         if self.settings.connection_mode == "router":
-            ip = select_router_ip(self.settings.router_ip, self.settings.host)
+            router = (
+                urlsplit(self.settings.router_api_url).hostname
+                if self.settings.router_api_url else None
+            )
+            ip = select_router_ip(self.settings.router_ip, self.settings.host, router)
         else:
             ip = self.settings.access_ip
             if not ip:
