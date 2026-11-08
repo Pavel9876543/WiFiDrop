@@ -99,16 +99,20 @@ def test_split_output_line_renders_qr(monkeypatch, window, tmp_path):
     window._read_output()
     assert window.current_url is None
     window._read_output()
-    assert window.current_url == url
+    assert window.current_url == ip_url
     assert window.site_status.text() == payload["ip_url"]
     assert window.domain_status.text() == url
     assert not window.qr_image.pixmap().isNull()
     assert str(path) in window.qr_description.text()
     assert window.qr_description.text().startswith(ip_url + "\n")
     assert url not in window.qr_description.text()
+    opened = Mock(return_value=True)
+    monkeypatch.setattr(gui.QDesktopServices, "openUrl", opened)
+    window.open_button.click()
+    assert opened.call_args.args[0].toString() == ip_url
 
 
-def test_hotspot_refresh_preserves_domain_and_enables_name_settings(monkeypatch, window):
+def test_hotspot_refresh_preserves_ip_and_enables_name_settings(monkeypatch, window):
     from app.hotspot.mobile_windows import MobileHotspotInfo
 
     window.settings = Settings(_env_file=None, connection_mode="hotspot")
@@ -117,10 +121,10 @@ def test_hotspot_refresh_preserves_domain_and_enables_name_settings(monkeypatch,
     assert window.local_domain_method_input.isEnabled()
     assert not window.router_ip_input.isEnabled()
     monkeypatch.setattr(window, "process_is_running", lambda: True)
-    window.current_url = "http://otrozhka.local:8000/"
+    window.current_url = "http://192.168.137.1:8000/"
     info = MobileHotspotInfo("Hotspot", "Hotspot", "192.168.137.1")
     window._apply_network_snapshot(gui.NetworkSnapshot(info, False))
-    assert window.current_url == "http://otrozhka.local:8000/"
+    assert window.current_url == "http://192.168.137.1:8000/"
     assert window.site_status.text() == "http://192.168.137.1:8000/"
     write = Mock()
     terminate = Mock()

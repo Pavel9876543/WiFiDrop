@@ -741,18 +741,16 @@ class WiFiDropWindow(QMainWindow):
         method = self.settings.local_domain_method
         self.diagnose_button.setEnabled(False)
 
-        def finished(message: str, ok: bool = True) -> None:
+        def finished(message: str) -> None:
             if not self.process_is_running() or self.site_status.text() != ip_url:
                 return
             self.diagnose_button.setEnabled(True)
             self.append_log(f"[GUI] Проверка соединения: {message}")
             self.domain_status.setText(message)
-            self.current_url = (
-                http_url(hostname, self.settings.effective_port) if ok and hostname else ip_url
-            )
+            self.current_url = ip_url
 
         self._start_worker(lambda: diagnose_access(ip_url, hostname, method, router_ip), finished,
-                           lambda message: finished(message, False))
+                           finished)
 
     def _mode_changed(self) -> None:
         try:
@@ -1239,7 +1237,7 @@ class WiFiDropWindow(QMainWindow):
         self._start_worker(inspect, launch, failed)
 
     def _show_access(self, payload: dict[str, str]) -> None:
-        self.current_url = payload["url"]
+        self.current_url = payload["ip_url"]
         self.site_status.setText(payload["ip_url"])
         domain_text = payload["domain_url"] or "Не задано или недоступно; используйте IP"
         if payload.get("domain_status"):
