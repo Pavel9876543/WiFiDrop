@@ -243,3 +243,36 @@ def test_router_launch_checks_actual_port_80(monkeypatch, window):
     window._start_router_server()
     assert ports == [80]
     assert window.process.processEnvironment().value("HTTP_WITHOUT_PORT") == "true"
+
+
+@pytest.mark.parametrize("answer,success", [({"192.168.1.20"}, True),
+                                         ({"192.168.1.99"}, False), (set(), False)])
+def test_manual_router_dns_works_without_api_or_password(monkeypatch, window, answer, success):
+    window.router_api_input.setText("http://192.168.1.1")
+    window.local_domain_input.setText("otrozhka.home.arpa")
+    monkeypatch.setattr(gui, "select_router_ip", lambda *_: "192.168.1.20")
+    resolve = Mock(return_value=answer)
+    monkeypatch.setattr(gui, "resolve_router_name", resolve)
+    forbidden = Mock(side_effect=AssertionError("DNS check must not change router or .env"))
+    monkeypatch.setattr(gui, "configure_router_dns", forbidden)
+    monkeypatch.setattr(gui, "update_env_file", forbidden)
+    monkeypatch.setattr(window, "_start_worker", lambda function, done, fail: (
+        _finish_worker(function, done, fail)
+    ))
+    assert not window.router_apply_button.isEnabled()
+    assert window.router_dns_check_button.isEnabled()
+    window.router_dns_check_button.click()
+    resolve.assert_called_once_with("otrozhka.home.arpa", "192.168.1.1")
+    message = window.router_support_status.text()
+    assert ("сохраните" in message) == success
+    assert not window._router_busy
+    forbidden.assert_not_called()
+
+
+def _finish_worker(function, done, fail):
+    try:
+        result = function()
+    except ValueError as exc:
+        fail(str(exc))
+    else:
+        done(result)

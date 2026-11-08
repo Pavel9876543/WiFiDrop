@@ -143,7 +143,10 @@ class RouterAccess:
             )
         payload = {"ip_url": ip_url, "domain_url": domain_url, "url": url, "qr_path": qr_path}
         if self.settings.local_domain:
-            payload["domain_status"] = "Имя объявлено/задано; DNS и HTTP ещё не проверены"
+            payload["domain_status"] = (
+                "Имя объявлено/задано; DNS и HTTP ещё не проверены" if domain_url
+                else "Имя не объявлено; используйте IP-адрес"
+            )
         self.payload = payload
         print(ACCESS_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
         return payload

@@ -54,7 +54,7 @@ from app.hotspot.windows import (
     ensure_hosted_network_with_elevation,
     stop_hosted_network_with_elevation,
 )
-from app.services.access_diagnostics import diagnose_access
+from app.services.access_diagnostics import diagnose_access, resolve_router_name
 from app.services.router_access import ACCESS_PREFIX
 from app.services.router_config import (
     RouterCapability,
@@ -64,7 +64,7 @@ from app.services.router_config import (
 )
 from app.utils.local_name import domain_hostname, normalize_local_name
 from app.utils.network import get_router_interfaces, select_router_ip
-from app.utils.router_url import http_url
+from app.utils.router_url import http_url, normalize_router_url
 
 
 class NoWheelSpinBox(QSpinBox):
@@ -268,7 +268,9 @@ class WiFiDropWindow(QMainWindow):
         router_box = QGroupBox("Две независимые настройки доступа через роутер")
         router_layout = QGridLayout(router_box)
         self.router_api_input = QLineEdit()
-        self.router_api_input.setPlaceholderText("https://192.168.1.1 — адрес роутера, не компьютера")
+        self.router_api_input.setPlaceholderText(
+            "http(s)://192.168.1.1 — адрес роутера для DNS/API"
+        )
         self.router_provider_input = QComboBox()
         self.router_provider_input.addItem("MikroTik RouterOS 7 REST", "mikrotik")
         self.router_provider_input.addItem("OpenWrt ubus / dnsmasq", "openwrt")
@@ -284,6 +286,10 @@ class WiFiDropWindow(QMainWindow):
         self.router_apply_button = QPushButton("Применить DNS-имя на роутере")
         self.router_apply_button.setEnabled(False)
         self.router_apply_button.clicked.connect(self._configure_router_dns)
+        self.router_manual_button = QPushButton("Параметры ручной DNS-записи")
+        self.router_manual_button.clicked.connect(self._show_manual_dns)
+        self.router_dns_check_button = QPushButton("Проверить DNS-запись на роутере")
+        self.router_dns_check_button.clicked.connect(self._check_router_dns)
         self.router_support_status = QLabel("Поддержка не проверена. Укажите API и логин роутера.")
         self.router_support_status.setWordWrap(True)
         self.router_support_status.setTextFormat(Qt.TextFormat.PlainText)
@@ -295,7 +301,7 @@ class WiFiDropWindow(QMainWindow):
         self.port80_status = QLabel("Не проверен. Зависит от компьютера; API роутера не нужен.")
         self.port80_status.setWordWrap(True)
         for row, (label, widget) in enumerate((
-            ("Адрес API роутера:", self.router_api_input),
+            ("Адрес роутера (DNS/API):", self.router_api_input),
             ("Тип API:", self.router_provider_input),
             ("Логин (только на эту сессию):", self.router_username_input),
             ("Пароль (не сохраняется):", self.router_password_input),
@@ -304,7 +310,8 @@ class WiFiDropWindow(QMainWindow):
             router_layout.addWidget(widget, row, 1)
         for row, widget in enumerate((
             self.router_skip_tls_input, self.router_probe_button, self.router_support_status,
-            self.router_dns_input, self.router_apply_button, self.http_without_port_input,
+            self.router_dns_input, self.router_apply_button,
+            self.router_manual_button, self.router_dns_check_button, self.http_without_port_input,
             self.port80_check_button, self.port80_status,
         ), start=4):
             router_layout.addWidget(widget, row, 0, 1, 2)
@@ -520,7 +527,8 @@ class WiFiDropWindow(QMainWindow):
         supported = bool(self._router_capability and self._router_capability.supported)
         for widget in (self.router_api_input, self.router_provider_input, self.router_username_input,
                        self.router_password_input, self.router_skip_tls_input, self.router_probe_button,
-                       self.port80_check_button):
+                       self.port80_check_button, self.router_manual_button,
+                       self.router_dns_check_button):
             widget.setEnabled(router and idle)
         self.router_dns_input.setEnabled(router and idle and supported)
         self.router_apply_button.setEnabled(router and idle and supported and self.router_dns_input.isChecked())
@@ -641,6 +649,72 @@ class WiFiDropWindow(QMainWindow):
 
     def _portless_toggled(self, _checked: bool) -> None:
         self._update_router_controls()
+
+    def _manual_dns_values(self) -> tuple[str, str, str]:
+        name = normalize_local_name(self.local_domain_input.text())
+        if not name:
+            raise ValueError("Введите локальное доменное имя в настройках.")
+        hostname = domain_hostname(name, "router_dns")
+        endpoint = normalize_router_url(self.router_api_input.text())
+        router_ip = str(urlsplit(endpoint).hostname)
+        ip = select_router_ip(
+            self.router_ip_input.currentData() or None, self.host_input.text(), router_ip,
+        )
+        return hostname, ip, router_ip
+
+    def _show_manual_dns(self) -> None:
+        try:
+            hostname, ip, router_ip = self._manual_dns_values()
+        except ValueError as exc:
+            QMessageBox.warning(
+                self, "DNS роутера",
+                f"{exc}\n\nДля DNS роутера используйте, например, otrozhka.home.arpa. "
+                "Имя otrozhka.local работает через mDNS и не требует DNS-записи роутера.",
+            )
+            return
+        port = 80 if self.http_without_port_input.isChecked() else self.port_input.value()
+        message = QMessageBox(self)
+        message.setWindowTitle("Ручная DNS-запись на роутере")
+        message.setTextFormat(Qt.TextFormat.PlainText)
+        message.setText(
+            f"В панели роутера {router_ip} добавьте локальную DNS-запись типа A:\n\n"
+            f"Имя: {hostname}\nIPv4 компьютера: {ip}\n"
+            f"Адрес сайта: {http_url(hostname, port)}\n\n"
+            "Раздел может называться «Локальный DNS», «Статические DNS-записи» или «Имена хостов». "
+            "Нужна запись имени, а не замена DNS-сервера интернет-подключения. "
+            "Закрепите этот IP за компьютером в DHCP роутера. Телефон должен использовать DNS "
+            "этого роутера. После добавления нажмите «Проверить DNS-запись на роутере», "
+            "выберите способ «DNS роутера» и сохраните настройки.\n\n"
+            "Наличие этой функции зависит от прошивки роутера. "
+            "Автоматическая запись через API предусмотрена для MikroTik и OpenWrt."
+        )
+        message.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        message.exec()
+
+    def _check_router_dns(self) -> None:
+        try:
+            hostname, ip, router_ip = self._manual_dns_values()
+        except ValueError as exc:
+            self.router_support_status.setText(str(exc))
+            return
+        self._router_busy = True
+        self._update_router_controls()
+        self.router_support_status.setText(f"Проверка DNS {router_ip}: {hostname} → {ip}…")
+
+        def inspect() -> str:
+            addresses = resolve_router_name(hostname, router_ip)
+            if addresses != {ip}:
+                actual = ", ".join(sorted(addresses)) or "запись отсутствует"
+                raise ValueError(f"{hostname} → {actual}; требуется {ip}")
+            return f"DNS роутера: {hostname} → {ip}. Выберите «DNS роутера» и сохраните настройки."
+
+        def finished(message: str) -> None:
+            self._router_busy = False
+            self.router_support_status.setText(message)
+            self._update_router_controls()
+
+        # DNS-запрос не требует API, логина и пароля и ничего не меняет на роутере.
+        self._start_worker(inspect, finished, finished)
 
     def _check_port80(self) -> None:
         host = self.host_input.text().strip() or "0.0.0.0"
